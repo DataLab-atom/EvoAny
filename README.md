@@ -6,50 +6,53 @@ U2E (Utility-to-Evolution) 是一个基于 git 的演化算法设计引擎。它
 
 ### 前置条件
 
-- [OpenClaw](https://github.com/openclaw/openclaw) 已安装并运行
 - Python >= 3.11
 - Git
 - GitHub CLI (`gh`) — 用于 `/hunt` 搜索仓库
 
-### 方式一：通过 OpenClaw CLI 安装（推荐）
+### 通用步骤：安装 evo-engine
+
+无论使用哪个平台，都需要先安装 MCP server：
 
 ```bash
-# 从 npm 安装
-openclaw plugins install openclaw-u2e
-
-# 重启 gateway 使插件生效
-openclaw gateway restart
-
-# 验证
-openclaw plugins list
-```
-
-### 方式二：本地开发模式安装
-
-```bash
-# 克隆仓库
 git clone https://github.com/DataLab-atom/u2e-plugin.git
-cd u2e-plugin
+cd u2e-plugin/plugin/evo-engine
+pip install .
+```
 
-# 安装 evo-engine 依赖
-cd plugin/evo-engine && pip install . && cd ../..
+---
 
-# 以本地链接模式安装到 OpenClaw
+### OpenClaw
+
+<details>
+<summary>CLI 一键安装（推荐）</summary>
+
+```bash
+openclaw plugins install openclaw-u2e
+openclaw gateway restart
+openclaw plugins doctor   # 验证
+```
+
+</details>
+
+<details>
+<summary>本地开发模式</summary>
+
+```bash
 openclaw plugins install -l ./plugin
-
-# 重启 gateway
 openclaw gateway restart
 ```
 
-### 方式三：手动安装
+</details>
 
-1. 将 `plugin/` 目录复制到 OpenClaw 扩展目录：
+<details>
+<summary>手动安装</summary>
+
+将插件复制到扩展目录，并在 `~/.openclaw/openclaw.json` 中注册：
 
 ```bash
 cp -r plugin/ ~/.openclaw/extensions/openclaw-u2e/
 ```
-
-2. 在 `~/.openclaw/openclaw.json` 中注册插件和 MCP server：
 
 ```json
 {
@@ -71,25 +74,106 @@ cp -r plugin/ ~/.openclaw/extensions/openclaw-u2e/
 }
 ```
 
-3. 重启 gateway：
-
 ```bash
 openclaw gateway restart
 ```
 
-### 验证安装
+</details>
+
+**验证：** 对话中输入 `/status`，看到 "Evolution not initialized" 即安装成功。
+
+---
+
+### Claude Code
+
+在项目根目录或全局 `.claude/settings.json` 中添加 MCP server：
+
+```json
+{
+  "mcpServers": {
+    "evo-engine": {
+      "command": "evo-engine",
+      "type": "stdio"
+    }
+  }
+}
+```
+
+将 skills 链接到 Claude Code：
 
 ```bash
-# 检查插件状态
-openclaw plugins doctor
-
-# 或启动对话，输入 /status
-# 看到 "Evolution not initialized" 说明 MCP server 已连通，安装成功
+ln -s $(pwd)/plugin/skills/* ~/.claude/skills/
 ```
+
+重启 Claude Code 即可使用。
+
+---
+
+### Cursor
+
+在项目根目录的 `.cursor/mcp.json` 中添加：
+
+```json
+{
+  "mcpServers": {
+    "evo-engine": {
+      "command": "evo-engine",
+      "type": "stdio"
+    }
+  }
+}
+```
+
+Cursor 会自动发现 MCP tools（`evo_init`、`evo_next_batch` 等）。Skills 需要作为 Cursor Rules 手动导入：
+
+```bash
+cp plugin/AGENTS.md .cursor/rules/u2e-agents.md
+```
+
+---
+
+### Windsurf
+
+在全局 `~/.codeium/windsurf/mcp_config.json` 中添加：
+
+```json
+{
+  "mcpServers": {
+    "evo-engine": {
+      "command": "evo-engine",
+      "type": "stdio"
+    }
+  }
+}
+```
+
+---
+
+### 其它 MCP 兼容客户端
+
+U2E 的核心是一个标准 [MCP](https://modelcontextprotocol.io) server。任何支持 MCP stdio 传输的客户端都可以接入：
+
+```bash
+# 直接启动 server（stdio 模式）
+evo-engine
+
+# 或指定 Python 模块
+python -m plugin.evo-engine.server
+```
+
+提供的 MCP tools：`evo_init`、`evo_register_targets`、`evo_next_batch`、`evo_report_fitness`、`evo_select_survivors`、`evo_get_status`、`evo_get_lineage`、`evo_freeze_target`、`evo_boost_target`、`evo_record_synergy`、`evo_check_cache`。
+
+---
 
 ### 可选配置
 
-演化状态默认存储在 `~/.openclaw/u2e-state/`，可通过环境变量或 `openclaw.json` 自定义：
+演化状态默认存储在 `~/.openclaw/u2e-state/`，可通过环境变量自定义：
+
+```bash
+export U2E_STATE_DIR=/path/to/your/state
+```
+
+或在 OpenClaw 中通过 `openclaw.json` 配置：
 
 ```json
 {
