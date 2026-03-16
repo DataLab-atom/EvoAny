@@ -1,0 +1,16 @@
+[project]
+name = "openclaw-u2e-evo-engine"
+version = "0.1.0"
+description = "MCP server for U2E evolutionary algorithm bookkeeping"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.0",
+    "pydantic>=2.0",
+]
+
+[project.scripts]
+evo-engine = "server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
