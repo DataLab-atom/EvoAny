@@ -42,8 +42,8 @@ Wait for user confirmation before proceeding.
 ## Step 2: Clone and set up
 
 ```
-exec("git clone <repo_url> ~/u2e-workspace/<repo_name>")
-exec("cd ~/u2e-workspace/<repo_name> && cat README.md")
+exec("git clone <repo_url> ~/evo-workspace/<repo_name>")
+exec("cd ~/evo-workspace/<repo_name> && cat README.md")
 ```
 
 Read the README to understand:
@@ -93,7 +93,7 @@ Once everything works, automatically invoke /evolve:
 
 Tell the user:
 ```
-Repo cloned and set up at ~/u2e-workspace/<name>
+Repo cloned and set up at ~/evo-workspace/<name>
 Baseline: XX.X%
 Starting evolution with 200 evaluations.
 ```

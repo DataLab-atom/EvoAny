@@ -1,6 +1,6 @@
-# U2E Plugin — Git-Based Evolutionary Code Optimizer
+# Evo-anything Plugin — Git-Based Evolutionary Code Optimizer
 
-U2E (Utility-to-Evolution) 是一个基于 git 的演化算法设计引擎。它通过 LLM 驱动的变异、交叉和反思，在任意 git 仓库上自动演化代码，追求更优的 benchmark 表现。
+Evo-anything 是一个基于 git 的演化算法设计引擎。它通过 LLM 驱动的变异、交叉和反思，在任意 git 仓库上自动演化代码，追求更优的 benchmark 表现。
 
 ## 安装
 
@@ -15,8 +15,8 @@ U2E (Utility-to-Evolution) 是一个基于 git 的演化算法设计引擎。它
 无论使用哪个平台，都需要先安装 MCP server：
 
 ```bash
-git clone https://github.com/DataLab-atom/u2e-plugin.git
-cd u2e-plugin/plugin/evo-engine
+git clone https://github.com/DataLab-atom/Evo-anythin.git
+cd Evo-anythin/plugin/evo-engine
 pip install .
 ```
 
@@ -28,7 +28,7 @@ pip install .
 <summary>CLI 一键安装（推荐）</summary>
 
 ```bash
-openclaw plugins install openclaw-u2e
+openclaw plugins install openclaw-evo
 openclaw gateway restart
 openclaw plugins doctor   # 验证
 ```
@@ -51,14 +51,14 @@ openclaw gateway restart
 将插件复制到扩展目录，并在 `~/.openclaw/openclaw.json` 中注册：
 
 ```bash
-cp -r plugin/ ~/.openclaw/extensions/openclaw-u2e/
+cp -r plugin/ ~/.openclaw/extensions/openclaw-evo/
 ```
 
 ```json
 {
   "plugins": {
     "entries": {
-      "openclaw-u2e": {
+      "openclaw-evo": {
         "enabled": true,
         "config": {}
       }
@@ -127,7 +127,7 @@ ln -s $(pwd)/plugin/skills/* ~/.claude/skills/
 Cursor 会自动发现 MCP tools（`evo_init`、`evo_next_batch` 等）。Skills 需要作为 Cursor Rules 手动导入：
 
 ```bash
-cp plugin/AGENTS.md .cursor/rules/u2e-agents.md
+cp plugin/AGENTS.md .cursor/rules/evo-agents.md
 ```
 
 ---
@@ -151,7 +151,7 @@ cp plugin/AGENTS.md .cursor/rules/u2e-agents.md
 
 ### 其它 MCP 兼容客户端
 
-U2E 的核心是一个标准 [MCP](https://modelcontextprotocol.io) server。任何支持 MCP stdio 传输的客户端都可以接入：
+Evo-anything 的核心是一个标准 [MCP](https://modelcontextprotocol.io) server。任何支持 MCP stdio 传输的客户端都可以接入：
 
 ```bash
 # 直接启动 server（stdio 模式）
@@ -167,7 +167,7 @@ python -m plugin.evo-engine.server
 
 ### 可选配置
 
-演化状态默认存储在 `~/.openclaw/u2e-state/`，可通过环境变量自定义：
+演化状态默认存储在 `~/.openclaw/evo-state/`，可通过环境变量自定义：
 
 ```bash
 export U2E_STATE_DIR=/path/to/your/state
@@ -179,7 +179,7 @@ export U2E_STATE_DIR=/path/to/your/state
 {
   "plugins": {
     "entries": {
-      "openclaw-u2e": {
+      "openclaw-evo": {
         "enabled": true,
         "config": {
           "statePath": "/path/to/your/state"
@@ -212,7 +212,7 @@ export U2E_STATE_DIR=/path/to/your/state
 
 ## 工作原理
 
-U2E 将代码优化建模为演化过程，所有实验以 git 分支记录：
+Evo-anything 将代码优化建模为演化过程，所有实验以 git 分支记录：
 
 1. **分析** — 识别目标函数（哪些代码值得优化）
 2. **规划** — 决定变异/交叉策略和每轮变体数量
@@ -237,7 +237,7 @@ U2E 将代码优化建模为演化过程，所有实验以 git 分支记录：
 ## 目录结构
 
 ```
-u2e-plugin/
+Evo-anythin/
 ├── LICENSE
 ├── README.md
 └── plugin/
@@ -260,7 +260,7 @@ u2e-plugin/
 
 ## 演化记忆
 
-U2E 在目标仓库中维护结构化记忆，避免重复失败的尝试：
+Evo-anything 在目标仓库中维护结构化记忆，避免重复失败的尝试：
 
 ```
 memory/

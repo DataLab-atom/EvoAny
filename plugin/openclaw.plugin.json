@@ -1,6 +1,6 @@
 {
-  "id": "openclaw-u2e",
-  "name": "U2E Evolution Engine",
+  "id": "openclaw-evo",
+  "name": "Evo-anything Evolution Engine",
   "description": "Git-based evolutionary algorithm design engine. Evolves code via LLM-driven mutation, crossover, and reflection on any git repository.",
   "version": "0.1.0",
   "kind": "agent-tool",
@@ -10,7 +10,7 @@
     "properties": {
       "statePath": {
         "type": "string",
-        "description": "Path to persist evolution state. Defaults to ~/.openclaw/u2e-state/"
+        "description": "Path to persist evolution state. Defaults to ~/.openclaw/evo-state/"
       }
     }
   },
