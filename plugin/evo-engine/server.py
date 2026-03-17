@@ -48,12 +48,10 @@ from models import (
     TargetStatus,
 )
 from selection import (
-    crowding_distance_assignment,
     dominates,
     fast_non_dominated_sort,
     pareto_front_of,
     plan_generation,
-    random_select,
     rank_select,
     representative_branch,
     select_survivors,
@@ -377,9 +375,19 @@ def evo_next_batch() -> dict:
                     target_function=target.function,
                 ).model_dump())
 
+    # Store batch so evo_step("code_ready") can look up item metadata.
+    state.current_batch = [BatchItem(**item) for item in batch]
+    state.batch_cursor = 0
+    _save()
+
     return {
         "generation": state.generation,
         "budget_remaining": budget_remaining,
+        "objectives": [
+            {"name": o.name, "direction": o.direction.value}
+            for o in state.config.objectives
+        ],
+        "benchmark_format": state.config.benchmark.output_format.value,
         "batch_size": len(batch),
         "batch": batch,
     }
@@ -861,6 +869,7 @@ def evo_step(
             "action": "run_benchmark",
             "branch": branch,
             "benchmark_cmd": state.config.benchmark.cmd,
+            "quick_cmd": state.config.benchmark.quick_cmd,
             "benchmark_format": state.config.benchmark.output_format.value,
             "objectives": [
                 {"name": o.name, "direction": o.direction.value}
