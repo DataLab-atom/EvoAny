@@ -7,7 +7,7 @@ args:
   benchmark:
     description: "Benchmark command to run. Output format depends on objectives count: single number for one objective, whitespace-separated numbers for multiple objectives, or JSON dict."
   objectives:
-    default: '[{"name": "score", "direction": "max"}]'
+    default: '[{"name": "score", "direction": "min"}]'
     description: "JSON array of objective specs. Each object has 'name' (str) and 'direction' ('min' or 'max'). Example: [{\"name\": \"latency\", \"direction\": \"min\"}, {\"name\": \"accuracy\", \"direction\": \"max\"}]"
 
 steps:

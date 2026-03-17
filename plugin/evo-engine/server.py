@@ -24,7 +24,6 @@ Benchmark output format is controlled by `benchmark_format`:
 
 from __future__ import annotations
 
-import fnmatch
 import json
 import os
 import random
@@ -776,35 +775,6 @@ _PHASE_FITNESS     = "fitness_ready"
 _PHASE_SELECT      = "select"
 _PHASE_REFLECT     = "reflect_done"
 _PHASE_DONE        = "done"
-
-
-def _policy_check(
-    repo_path: str,
-    branch: str,
-    parent: str,
-    protected_patterns: list[str],
-    allowed_files: set[str],
-) -> tuple[bool, str]:
-    """Run git diff and check for policy violations.
-
-    Returns (approved: bool, reason: str).
-    """
-    result = subprocess.run(
-        ["git", "-C", repo_path, "diff", "--name-only", f"{parent}..{branch}"],
-        capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        return False, f"git diff failed: {result.stderr.strip()}"
-
-    changed = [f for f in result.stdout.strip().splitlines() if f]
-    for f in changed:
-        basename = os.path.basename(f)
-        for pat in protected_patterns:
-            if fnmatch.fnmatch(f, pat) or fnmatch.fnmatch(basename, pat):
-                return False, f"Protected file modified: {f!r} (pattern {pat!r})"
-        if allowed_files and f not in allowed_files:
-            return False, f"File outside optimization targets: {f!r}"
-    return True, ""
 
 
 @mcp.tool()
