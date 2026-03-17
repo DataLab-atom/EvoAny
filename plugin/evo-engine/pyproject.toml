@@ -11,6 +11,9 @@ dependencies = [
 [project.scripts]
 evo-engine = "server:main"
 
+[tool.setuptools]
+py-modules = ["server", "models", "selection"]
+
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
