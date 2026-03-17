@@ -54,10 +54,12 @@ WorkerAgent receives: item = {branch, operation, target_id, parent_branches,
 1. CODEGEN — generate the variant
    a. git checkout -b item.branch from item.parent_branches[0]
    b. parent_commit = git rev-parse item.parent_branches[0]
-   c. Read target function code
-   d. Read memory/ for this target (long_term + failures)
-   e. Generate variant (mutate or crossover)
-   f. git add + git commit
+   c. Read target function code; compute code_hash = sha256 of file content
+   d. Check cache: result = evo_check_cache(operation=item.operation, code_hash=code_hash)
+      If result.cached == True: skip codegen, skip benchmark, report via evo_step("fitness_ready") using cached values
+   e. Read memory/ for this target (long_term + failures)
+   f. Generate variant (mutate or crossover)
+   g. git add + git commit
 
 2. REQUEST POLICY CHECK
    step = evo_step("code_ready",
@@ -113,6 +115,24 @@ ReflectAgent receives: selection result with keep/eliminate/best_branch
    - Run WorkerAgent flow on synergy branch
    - Record results via evo_record_synergy
 ```
+
+## Standalone Tools (not evo_step phases)
+
+| Tool | Called by | Purpose |
+|------|-----------|---------|
+| `evo_init` | OrchestratorAgent (once) | Initialize run, set config, preload memory |
+| `evo_register_targets` | MapAgent (once) | Register optimization targets |
+| `evo_report_seed` | OrchestratorAgent (once) | Record seed baseline fitness |
+| `evo_next_batch` | OrchestratorAgent | Request next generation batch (alternative to evo_step) |
+| `evo_report_fitness` | WorkerAgent | Report individual fitness (alternative to evo_step("fitness_ready")) |
+| `evo_select_survivors` | OrchestratorAgent | Run selection (alternative to evo_step("select")) |
+| `evo_revalidate_targets` | OrchestratorAgent | Re-run baseline on changed targets, update seed fitness |
+| `evo_check_cache` | WorkerAgent (before codegen) | Check if this (op, code_hash) was already evaluated |
+| `evo_get_status` | Any agent | Query current run progress and best results |
+| `evo_get_lineage` | Any agent | Get git ancestry of a branch |
+| `evo_freeze_target` | OrchestratorAgent | Stop expanding a target |
+| `evo_boost_target` | OrchestratorAgent | Increase a target's selection budget |
+| `evo_record_synergy` | ReflectAgent | Record synergy cross-target results |
 
 ## State Machine — Phase Reference
 

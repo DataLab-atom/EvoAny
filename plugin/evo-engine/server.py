@@ -48,7 +48,6 @@ from models import (
 )
 from selection import (
     dominates,
-    fast_non_dominated_sort,
     pareto_front_of,
     plan_generation,
     rank_select,
@@ -256,7 +255,7 @@ def evo_init(
 
     # Pre-load directions into global memory so all agents benefit immediately.
     if directions:
-        _write_directions_to_memory(directions)
+        _write_directions_to_memory(directions, repo_path)
 
     return {
         "status": "initialized",
@@ -475,6 +474,8 @@ def evo_report_fitness(
 
     if code_hash and code_hash in state.fitness_cache:
         cached = state.fitness_cache[code_hash]
+        state.total_evals += 1
+        _save()
         return {"cached": True, "fitness_values": cached, "branch": branch}
 
     ind = Individual(
@@ -1155,9 +1156,9 @@ def _calc_improvement(state: EvolutionState) -> dict[str, str] | None:
     return result or None
 
 
-def _write_directions_to_memory(directions: list[str]) -> None:
+def _write_directions_to_memory(directions: list[str], repo_path: str) -> None:
     """Prepend user-supplied domain directions to global long-term memory."""
-    memory_dir = Path(_STATE_DIR) / "memory" / "global"
+    memory_dir = Path(repo_path) / "memory" / "global"
     memory_dir.mkdir(parents=True, exist_ok=True)
     mem_file = memory_dir / "long_term.md"
 
@@ -1187,8 +1188,8 @@ def _inherit_from_parent(
             new_target.current_best_obj = parent.current_best_obj
 
     # Copy memory files with provenance note.
-    src_dir = Path(_STATE_DIR) / "memory" / "targets" / parent_id
-    dst_dir = Path(_STATE_DIR) / "memory" / "targets" / new_target.id
+    src_dir = Path(state.config.repo_path) / "memory" / "targets" / parent_id
+    dst_dir = Path(state.config.repo_path) / "memory" / "targets" / new_target.id
     if src_dir.exists():
         dst_dir.mkdir(parents=True, exist_ok=True)
         for src_file in src_dir.iterdir():

@@ -191,9 +191,6 @@ Evo-anything's core is a standard [MCP](https://modelcontextprotocol.io) server.
 ```bash
 # Start the server directly (stdio mode)
 evo-engine
-
-# Or run as a Python module
-python -m plugin.evo-engine.server
 ```
 
 Available MCP tools: `evo_init`, `evo_register_targets`, `evo_report_seed`, `evo_step`, `evo_next_batch`, `evo_report_fitness`, `evo_select_survivors`, `evo_get_status`, `evo_get_lineage`, `evo_freeze_target`, `evo_boost_target`, `evo_record_synergy`, `evo_check_cache`.

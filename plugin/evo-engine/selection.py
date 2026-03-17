@@ -386,7 +386,7 @@ def update_temperatures(targets: dict) -> None:
             continue
 
         if target.stagnation_count == 0:
-            # Pareto front expanded — exploit more.
+            # Pareto front expanded — increase budget to explore further.
             target.temperature = min(2.0, target.temperature + 0.3)
         elif target.stagnation_count >= 3:
             # Stagnating — reduce budget, save for other targets.
