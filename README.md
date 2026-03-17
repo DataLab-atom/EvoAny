@@ -322,7 +322,3 @@ gen-{N}/synergy/{targetA}+{targetB}-{V}  # 跨目标组合
 ```
 
 Tags: `seed-baseline`, `best-gen-{N}`, `best-overall`
-
-## License
-
-MIT
