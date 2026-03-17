@@ -1,6 +1,8 @@
 # Evo-anything Plugin — Git-Based Evolutionary Code Optimizer
 
-Evo-anything is a git-based evolutionary algorithm design engine. Driven by LLM-powered mutation, crossover, and reflection, it automatically evolves code in any git repository to achieve better benchmark performance.
+Evo-anything is the engineering implementation of **"From Understanding to Excelling: Template-Free Algorithm Design through Structural-Functional Co-Evolution"** (arXiv:2503.10721). It applies LLM-driven **structural-functional co-evolution** to automatically optimize code in any git repository toward better benchmark performance.
+
+> **Paper:** Zhe Zhao, Haibin Wen, Pengkun Wang, Ye Wei, Zaixi Zhang, Xi Lin, Fei Liu, Bo An, Hui Xiong, Yang Wang, Qingfu Zhang. *From Understanding to Excelling: Template-Free Algorithm Design through Structural-Functional Co-Evolution.* arXiv:2503.10721 [cs.SE], 2025.
 
 ## Installation
 
@@ -190,7 +192,7 @@ Available MCP tools: `evo_init`, `evo_register_targets`, `evo_next_batch`, `evo_
 
 ### Optional Configuration
 
-Evolution state is stored in `~/.openclaw/evo-state/` by default. Override with an environment variable:
+Evolution state is stored in `~/.openclaw/evo-state/` by default. Override with an environment variable (`U2E` stands for *Understanding to Excelling*, the paper's acronym):
 
 ```bash
 export U2E_STATE_DIR=/path/to/your/state
@@ -235,16 +237,25 @@ You send: I want SOTA on CIFAR-100-LT
 
 ## How It Works
 
-Evo-anything models code optimization as an evolutionary process, with every experiment tracked as a git branch:
+Evo-anything implements the **U2E (Understanding to Excelling) protocol** proposed in the paper — a template-free, two-dimensional co-evolution framework. Unlike EoH and FunSearch, which rely on predefined templates and optimize only local key functions, U2E performs global joint optimization across both the **functional dimension** (algorithm logic) and the **structural dimension** (code architecture).
 
-1. **Analysis** — identify target functions (which code is worth optimizing)
-2. **Planning** — decide mutation/crossover strategy and variant counts per round
-3. **Generation** — generate code variants via LLM
+Every experiment is tracked as a git branch. The evolution loop has six stages:
+
+1. **Analysis** — automatically identify key algorithm modules worth optimizing
+2. **Planning** — decide mutation/crossover strategy and variant counts; adaptively allocate budget by temperature per target
+3. **Generation** — LLM generates code variants (mutation: single-parent refinement; crossover: two-parent combination)
 4. **Evaluation** — run benchmarks in isolated git worktrees
-5. **Selection** — keep the best, discard the rest
-6. **Reflection** — extract lessons, write to memory
+5. **Selection** — keep the best, discard the rest; run cross-target Synergy checks every N generations
+6. **Reflection** — extract lessons into structured memory to guide future evolution
 
 The best result of each generation is tagged (`best-gen-{N}`), and the final `best-overall` branch is pushed.
+
+### Comparison with Prior Work
+
+| Method | Template Required | Optimization Scope | Structural Evolution |
+|--------|------------------|--------------------|----------------------|
+| EoH / FunSearch | Yes (predefined) | Local functions | No |
+| **Evo-anything (U2E)** | **No** | **Global multi-target** | **Functional + Structural co-evolution** |
 
 ## Skills
 
