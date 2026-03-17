@@ -770,12 +770,14 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
         # Cache check: skip recording if this code was already evaluated
         if code_hash and code_hash in state.fitness_cache:
             cached = state.fitness_cache[code_hash]
+            state.total_evals += 1  # cache hits still consume budget
             _save()
             return {
                 "action": "worker_done",
                 "branch": branch,
                 "cached": True,
                 "fitness": cached,
+                "total_evals": state.total_evals,
             }
 
         is_min = state.config.objective == Objective.MIN
