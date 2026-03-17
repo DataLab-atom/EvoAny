@@ -33,7 +33,7 @@ Identify what the benchmark measures and which functions it calls.
 /oracle -p "Identify the 1-5 functions most likely to impact this benchmark's performance.
 For each function provide: filename, function name, line range, and why it dominates.
 Benchmark entry: <benchmark_file>
-Objective: <min/max>
+Objectives: <list of {name, direction} dicts, e.g. [{name:'latency',direction:'min'},{name:'accuracy',direction:'max'}]>
 Focus only on functions whose bodies can be changed without altering their signatures." \
 --file "*.py" --file "!benchmark*.py" --file "!eval*.py" --file "!test*.py"
 ```

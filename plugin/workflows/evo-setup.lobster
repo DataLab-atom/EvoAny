@@ -5,10 +5,10 @@ args:
   repo:
     description: "Absolute path to the target git repository"
   benchmark:
-    description: "Benchmark command to run (must print a float on the last line)"
-  objective:
-    default: "max"
-    description: "Optimization direction: max or min"
+    description: "Benchmark command to run. Output format depends on objectives count: single number for one objective, whitespace-separated numbers for multiple objectives, or JSON dict."
+  objectives:
+    default: '[{"name": "score", "direction": "max"}]'
+    description: "JSON array of objective specs. Each object has 'name' (str) and 'direction' ('min' or 'max'). Example: [{\"name\": \"latency\", \"direction\": \"min\"}, {\"name\": \"accuracy\", \"direction\": \"max\"}]"
 
 steps:
   - id: check_clean
@@ -20,7 +20,7 @@ steps:
 
   - id: run_baseline
     command: exec --shell 'cd "{args.repo}" && {args.benchmark} 2>&1'
-    # stdout must end with a float on the last line (e.g. "0.8423")
+    # stdout must end with fitness values matching the objectives count.
 
   - id: tag_seed
     command: exec --shell 'git -C "{args.repo}" tag seed-baseline'
