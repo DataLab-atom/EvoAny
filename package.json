@@ -2,17 +2,25 @@
   "name": "evo-anything",
   "version": "0.1.0",
   "description": "Git-based evolutionary algorithm design engine. Evolves code via LLM-driven mutation, crossover, and reflection on any git repository.",
-  "keywords": ["ai", "evolutionary-algorithm", "mcp", "llm", "code-optimization", "openclaw", "claude"],
+  "keywords": [
+    "ai",
+    "evolutionary-algorithm",
+    "mcp",
+    "llm",
+    "code-optimization",
+    "openclaw",
+    "claude"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/DataLab-atom/Evo-anything.git"
+    "url": "git+https://github.com/DataLab-atom/Evo-anything.git"
   },
   "engines": {
     "node": ">=16"
   },
   "bin": {
-    "evo-anything": "./scripts/cli.js"
+    "evo-anything": "scripts/cli.js"
   },
   "scripts": {
     "postinstall": "node scripts/postinstall.js"

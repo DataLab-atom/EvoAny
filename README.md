@@ -1,6 +1,8 @@
 # Evo-anything Plugin — Git-Based Evolutionary Code Optimizer
 
-Evo-anything 是一个基于 git 的演化算法设计引擎。它通过 LLM 驱动的变异、交叉和反思，在任意 git 仓库上自动演化代码，追求更优的 benchmark 表现。
+Evo-anything 是基于论文 **"From Understanding to Excelling: Template-Free Algorithm Design through Structural-Functional Co-Evolution"**（arXiv:2503.10721）的工程实现。它通过 LLM 驱动的**结构-功能协同演化**，在任意 git 仓库上自动演化代码，追求更优的 benchmark 表现。
+
+> **论文引用：** Zhe Zhao, Haibin Wen, Pengkun Wang, Ye Wei, Zaixi Zhang, Xi Lin, Fei Liu, Bo An, Hui Xiong, Yang Wang, Qingfu Zhang. *From Understanding to Excelling: Template-Free Algorithm Design through Structural-Functional Co-Evolution.* arXiv:2503.10721 [cs.SE], 2025.
 
 ## 安装
 
@@ -192,7 +194,7 @@ python -m plugin.evo-engine.server
 
 ### 可选配置
 
-演化状态默认存储在 `~/.openclaw/evo-state/`，可通过环境变量自定义：
+演化状态默认存储在 `~/.openclaw/evo-state/`，可通过环境变量自定义（`U2E` 即论文名 *Understanding to Excelling* 缩写）：
 
 ```bash
 export U2E_STATE_DIR=/path/to/your/state
@@ -237,16 +239,25 @@ export U2E_STATE_DIR=/path/to/your/state
 
 ## 工作原理
 
-Evo-anything 将代码优化建模为演化过程，所有实验以 git 分支记录：
+Evo-anything 实现了论文提出的 **U2E（Understanding to Excelling）协议**——一种无模板的两维协同演化框架，区别于 EoH、FunSearch 等依赖预定义模板、仅做局部函数优化的方法，U2E 同时在**功能维**（算法逻辑）和**结构维**（代码架构）上做全局联合优化。
 
-1. **分析** — 识别目标函数（哪些代码值得优化）
-2. **规划** — 决定变异/交叉策略和每轮变体数量
-3. **生成** — 通过 LLM 生成代码变体
+所有实验以 git 分支记录，演化循环包含六个阶段：
+
+1. **分析** — 自动识别关键算法模块（哪些代码值得优化）
+2. **规划** — 决定变异/交叉策略和每轮变体数量，按温度自适应分配预算
+3. **生成** — LLM 生成代码变体（变异：单亲改进；交叉：双亲融合）
 4. **评估** — 在隔离的 git worktree 中运行 benchmark
-5. **选择** — 保留最优，淘汰其余
-6. **反思** — 提取经验教训，写入记忆
+5. **选择** — 保留最优，淘汰其余；每 N 代做跨目标协同（Synergy）检验
+6. **反思** — 提取经验教训，写入结构化记忆，指导后续演化
 
 每一代的最优结果打 tag（`best-gen-{N}`），最终推送 `best-overall` 分支。
+
+### 与现有方法对比
+
+| 方法 | 模板依赖 | 优化范围 | 结构演化 |
+|------|---------|---------|---------|
+| EoH / FunSearch | 需要预定义模板 | 局部函数 | 无 |
+| **Evo-anything (U2E)** | **无需模板** | **全局多目标** | **功能 + 结构协同** |
 
 ## Skills
 
