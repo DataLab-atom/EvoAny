@@ -164,8 +164,13 @@ Flag any new `NameError` or `ImportError` risks introduced by the variant.
 
 **Only commit after static validation passes.** This prevents wasting a benchmark slot on code that would crash in the first line.
 
-```
+```bash
+# For mutate/crossover — only the single target file should change:
 git add {item.target_file}
+
+# For structural — multiple files may be modified across the repo:
+# git add -u    (stages all tracked modified files; do NOT use 'git add .' to avoid staging untracked junk)
+
 git commit -m "gen-{N}/{target_id}/{operation}: {one-line description of change}"
 ```
 

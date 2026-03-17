@@ -346,11 +346,14 @@ def evo_next_batch() -> dict:
 
     Returns a list of operations, each specifying:
     - branch: the branch name to create
-    - operation: 'mutate', 'crossover', or 'synergy'
+    - operation: 'mutate', 'crossover', 'structural', or 'synergy'
     - target_id: which target this operates on
     - parent_branches: which branch(es) to base this on
     - target_file: the file containing the target function
     - target_function: the function name to modify
+    - target_description: semantic description for fallback location search
+    - target_hint: rough location hint (e.g. "class Trainer, mid-file")
+    - structural_op: specific structural operator (non-empty only for 'structural')
     """
     state = _get_state()
     budget_remaining = state.config.max_fe - state.total_evals
@@ -450,7 +453,7 @@ def evo_report_fitness(
     Args:
         branch: The branch that was evaluated.
         target_id: Which target was modified.
-        operation: 'mutate', 'crossover', or 'synergy'.
+        operation: 'mutate', 'crossover', 'structural', or 'synergy'.
         parent_branches: Parent branch(es).
         fitness_values: Objective values, one per objective in config order.
             For a single-objective run pass a one-element list, e.g. [1.23].
