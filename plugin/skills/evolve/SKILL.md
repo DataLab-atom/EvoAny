@@ -9,7 +9,7 @@ metadata:
 
 # /evolve — Start Evolution
 
-User provides: repo path, benchmark command, objective (min/max), and optionally max evaluations.
+User provides: repo path, benchmark command, objectives (list of {name, direction} specs), and optionally max evaluations.
 
 ## Step 1 — Deterministic setup via lobster
 
@@ -20,7 +20,7 @@ This is atomic: if any step fails, the exact failure step is reported and nothin
 lobster action:run pipeline:"./plugin/workflows/evo-setup.lobster" args:{
   "repo": "<repo_path>",
   "benchmark": "<benchmark_cmd>",
-  "objective": "<max|min>"
+  "objectives": "[{\"name\": \"score\", \"direction\": \"max\"}]"
 }
 ```
 
@@ -31,11 +31,12 @@ The workflow handles:
 - Create `memory/` directory structure
 - Initialize `~/clawd/canvas/` for dashboard
 
-Parse the baseline fitness from `run_baseline.stdout` (last line as float).
+Parse the baseline fitness from `run_baseline.stdout` (last line — whitespace-separated
+numbers for "numbers" format, or JSON dict for "json" format).
 
 Then call the MCP tools to record it:
-- `evo_init` with user's config (repo, benchmark, objective, max_evals)
-- `evo_report_seed` with the baseline fitness value
+- `evo_init` with user's config (repo, benchmark, objectives, max_evals)
+- `evo_report_seed` with the baseline fitness values as `list[float]`
 
 **If lobster is not available**, fall back to running each step with individual `exec` calls.
 

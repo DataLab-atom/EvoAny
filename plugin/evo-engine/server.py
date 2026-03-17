@@ -5,14 +5,29 @@ Handles all deterministic evolution bookkeeping:
 population state, selection, batch planning, lineage tracking.
 
 The agent calls these tools; the LLM handles code generation and reflection.
+
+Multi-objective support
+-----------------------
+fitness is always a list[float] with one value per objective (same order as
+config.objectives).  Single-objective runs use a list of length 1.
+
+evo_init accepts an `objectives` parameter:
+  - list of {"name": str, "direction": "min"|"max"} dicts
+  - if omitted, defaults to [{"name": "score", "direction": "min"}] for
+    backward compatibility with single-objective callers.
+
+Benchmark output format is controlled by `benchmark_format`:
+  - "numbers" (default): last whitespace-separated numbers on stdout,
+    one per objective, in objective order.
+  - "json": last line of stdout is a JSON dict keyed by objective name.
 """
 
 from __future__ import annotations
 
 import fnmatch
-import hashlib
 import json
 import os
+import random
 import subprocess
 from pathlib import Path
 
@@ -20,19 +35,25 @@ from mcp.server.fastmcp import FastMCP
 
 from models import (
     BatchItem,
+    BenchmarkOutputFormat,
+    BenchmarkSpec,
     EvolutionConfig,
     EvolutionState,
     Individual,
     Objective,
+    ObjectiveSpec,
     Operation,
     SurvivorResult,
     Target,
     TargetStatus,
 )
 from selection import (
+    dominates,
+    fast_non_dominated_sort,
+    pareto_front_of,
     plan_generation,
-    random_select,
     rank_select,
+    representative_branch,
     select_survivors,
     update_temperatures,
 )
@@ -76,6 +97,76 @@ def _get_state() -> EvolutionState:
 
 
 # ---------------------------------------------------------------------------
+# Pareto bookkeeping helpers
+# ---------------------------------------------------------------------------
+
+
+def _update_global_pareto(state: EvolutionState) -> None:
+    """Recompute the global Pareto front from all successful individuals."""
+    all_valid = [
+        ind for ind in state.individuals.values()
+        if ind.success and ind.fitness is not None
+    ]
+    front = pareto_front_of(all_valid, state.config.objectives)
+    state.pareto_front = [ind.branch for ind in front]
+
+    # Update representative best (best on first objective).
+    rep = representative_branch(state.pareto_front, state.individuals, state.config.objectives)
+    if rep:
+        state.best_branch_overall = rep
+        state.best_obj_overall = state.individuals[rep].fitness
+
+
+def _update_target_pareto(state: EvolutionState, target_id: str) -> None:
+    """Recompute the local Pareto front for a single target."""
+    if target_id not in state.targets:
+        return
+    target = state.targets[target_id]
+    active = state.active_branches.get(target_id, [])
+    active_inds = [
+        state.individuals[b] for b in active
+        if b in state.individuals and state.individuals[b].success
+        and state.individuals[b].fitness is not None
+    ]
+    if not active_inds:
+        return
+    front = pareto_front_of(active_inds, state.config.objectives)
+    target.pareto_branches = [ind.branch for ind in front]
+
+    rep = representative_branch(
+        target.pareto_branches, state.individuals, state.config.objectives
+    )
+    if rep:
+        target.current_best_branch = rep
+        target.current_best_obj = state.individuals[rep].fitness
+
+
+def _pareto_front_expanded(
+    new_individuals: list[Individual],
+    existing_front_branches: list[str],
+    all_individuals: dict,
+    objectives: list[ObjectiveSpec],
+) -> bool:
+    """Return True if any individual in *new_individuals* is not dominated
+    by the existing Pareto front — i.e., the front would expand."""
+    existing_fitnesses = [
+        all_individuals[b].fitness
+        for b in existing_front_branches
+        if b in all_individuals and all_individuals[b].fitness is not None
+    ]
+    for ind in new_individuals:
+        if ind.fitness is None:
+            continue
+        dominated = any(
+            dominates(ef, ind.fitness, objectives)
+            for ef in existing_fitnesses
+        )
+        if not dominated:
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
 
@@ -84,7 +175,8 @@ def _get_state() -> EvolutionState:
 def evo_init(
     repo_path: str,
     benchmark_cmd: str,
-    objective: str = "min",
+    objectives: list[dict] | None = None,
+    benchmark_format: str = "numbers",
     max_fe: int = 500,
     pop_size: int = 8,
     mutation_rate: float = 0.5,
@@ -96,27 +188,52 @@ def evo_init(
 
     Args:
         repo_path: Path to the target git repository.
-        benchmark_cmd: Command to run for fitness evaluation.
-        objective: 'min' or 'max'.
-        max_fe: Maximum number of fitness evaluations.
+        benchmark_cmd: Shell command that evaluates a code variant.
+        objectives: List of objective specs.  Each entry is a dict with keys:
+            "name" (str) and "direction" ("min" or "max").
+            Example (multi-obj):  [{"name": "latency", "direction": "min"},
+                                   {"name": "accuracy", "direction": "max"}]
+            Example (single-obj): [{"name": "score", "direction": "min"}]
+            Defaults to [{"name": "score", "direction": "min"}].
+        benchmark_format: How to parse benchmark stdout.
+            "numbers" — whitespace-separated numbers, one per objective, last
+                        non-empty line.  Single-objective legacy default.
+            "json"    — last non-empty line is a JSON object keyed by
+                        objective name, e.g. {"latency": 1.2, "accuracy": 0.9}
+        max_fe: Maximum number of fitness evaluations (budget).
         pop_size: Number of variants per target per generation.
-        mutation_rate: Fraction of variants generated by mutation (vs crossover).
+        mutation_rate: Fraction of variants generated by mutation vs crossover.
         synergy_interval: Run synergy check every N generations.
-        top_k_survive: Keep top K branches per target.
-        quick_cmd: Optional quick evaluation command for pre-filtering.
+        top_k_survive: Keep top K branches per target after selection.
+        quick_cmd: Optional fast pre-filter command (single-objective number).
     """
     global _state
 
+    # Normalise objectives — default to single-objective minimisation.
+    if not objectives:
+        objectives = [{"name": "score", "direction": "min"}]
+
+    obj_specs = [
+        ObjectiveSpec(name=o["name"], direction=Objective(o["direction"]))
+        for o in objectives
+    ]
+
+    fmt = BenchmarkOutputFormat(benchmark_format)
+    benchmark = BenchmarkSpec(
+        cmd=benchmark_cmd,
+        output_format=fmt,
+        quick_cmd=quick_cmd or None,
+    )
+
     config = EvolutionConfig(
         repo_path=repo_path,
-        benchmark_cmd=benchmark_cmd,
-        objective=Objective(objective),
+        benchmark=benchmark,
+        objectives=obj_specs,
         max_fe=max_fe,
         pop_size=pop_size,
         mutation_rate=mutation_rate,
         synergy_interval=synergy_interval,
         top_k_survive=top_k_survive,
-        quick_cmd=quick_cmd or None,
     )
 
     _state = EvolutionState(config=config)
@@ -125,7 +242,8 @@ def evo_init(
     return {
         "status": "initialized",
         "repo_path": repo_path,
-        "objective": objective,
+        "objectives": [{"name": o.name, "direction": o.direction.value} for o in obj_specs],
+        "benchmark_format": benchmark_format,
         "max_fe": max_fe,
         "pop_size": pop_size,
     }
@@ -137,7 +255,8 @@ def evo_register_targets(targets: list[dict]) -> dict:
 
     Args:
         targets: List of targets, each with keys:
-            id, file, function, lines (optional), impact (optional), description (optional).
+            id, file, function, lines (optional), impact (optional),
+            description (optional).
     """
     state = _get_state()
 
@@ -162,23 +281,29 @@ def evo_register_targets(targets: list[dict]) -> dict:
 
 
 @mcp.tool()
-def evo_report_seed(obj: float) -> dict:
+def evo_report_seed(fitness_values: list[float]) -> dict:
     """Report the seed baseline fitness.
 
     Args:
-        obj: The objective value of the seed (unmodified) code.
+        fitness_values: Objective values of the unmodified seed code,
+            one per objective in the same order as config.objectives.
+            For a single-objective run pass a one-element list, e.g. [42.0].
     """
     state = _get_state()
-    state.seed_obj = obj
-    state.best_obj_overall = obj
+    state.seed_obj = fitness_values
+    state.best_obj_overall = fitness_values
     state.total_evals += 1
 
     for target in state.targets.values():
-        target.current_best_obj = obj
+        target.current_best_obj = fitness_values
 
     _save()
 
-    return {"seed_obj": obj, "total_evals": state.total_evals}
+    return {
+        "seed_obj": fitness_values,
+        "objectives": [o.name for o in state.config.objectives],
+        "total_evals": state.total_evals,
+    }
 
 
 @mcp.tool()
@@ -194,13 +319,11 @@ def evo_next_batch() -> dict:
     - target_function: the function name to modify
     """
     state = _get_state()
-    is_min = state.config.objective == Objective.MIN
     budget_remaining = state.config.max_fe - state.total_evals
 
     if budget_remaining <= 0:
         return {"done": True, "reason": "budget exhausted", "batch": []}
 
-    # Plan this generation
     plan = plan_generation(
         targets=state.targets,
         pop_size=state.config.pop_size,
@@ -208,7 +331,6 @@ def evo_next_batch() -> dict:
         budget_remaining=budget_remaining,
         synergy_interval=state.config.synergy_interval,
         generation=state.generation,
-        is_minimize=is_min,
     )
 
     batch: list[dict] = []
@@ -219,21 +341,19 @@ def evo_next_batch() -> dict:
         op = item["operation"]
         count = item["count"]
 
-        for v in range(count):
+        for _ in range(count):
             key = f"{tid}/{op.value}"
-            var_counter[key] = var_counter.get(key, 0)
-            idx = var_counter[key]
-            var_counter[key] += 1
+            idx = var_counter.get(key, 0)
+            var_counter[key] = idx + 1
 
             if op == Operation.SYNERGY:
                 branch = f"gen-{state.generation}/synergy/{tid}-{idx}"
-                # For synergy, parents are the best of each constituent target
                 parts = tid.split("+")
-                parents = []
-                for part in parts:
-                    t = state.targets.get(part)
-                    if t and t.current_best_branch:
-                        parents.append(t.current_best_branch)
+                parents = [
+                    state.targets[p].current_best_branch
+                    for p in parts
+                    if p in state.targets and state.targets[p].current_best_branch
+                ]
                 batch.append(BatchItem(
                     branch=branch,
                     operation=op,
@@ -245,30 +365,7 @@ def evo_next_batch() -> dict:
             else:
                 target = state.targets[tid]
                 branch = f"gen-{state.generation}/{tid}/{op.value}-{idx}"
-
-                # Determine parents
-                if op == Operation.CROSSOVER:
-                    # Pick two parents from active branches
-                    active = state.active_branches.get(tid, [])
-                    active_inds = [
-                        state.individuals[b] for b in active
-                        if b in state.individuals and state.individuals[b].success
-                    ]
-                    pairs = random_select(active_inds, 1, is_minimize=is_min)
-                    if pairs:
-                        parents = [pairs[0][0].branch, pairs[0][1].branch]
-                    elif target.current_best_branch:
-                        parents = [target.current_best_branch]
-                    else:
-                        parents = [state.seed_branch]
-                elif op == Operation.MUTATE:
-                    if target.current_best_branch:
-                        parents = [target.current_best_branch]
-                    else:
-                        parents = [state.seed_branch]
-                else:
-                    parents = []
-
+                parents = _choose_parents(state, tid, op)
                 batch.append(BatchItem(
                     branch=branch,
                     operation=op,
@@ -278,9 +375,19 @@ def evo_next_batch() -> dict:
                     target_function=target.function,
                 ).model_dump())
 
+    # Store batch so evo_step("code_ready") can look up item metadata.
+    state.current_batch = [BatchItem(**item) for item in batch]
+    state.batch_cursor = 0
+    _save()
+
     return {
         "generation": state.generation,
         "budget_remaining": budget_remaining,
+        "objectives": [
+            {"name": o.name, "direction": o.direction.value}
+            for o in state.config.objectives
+        ],
+        "benchmark_format": state.config.benchmark.output_format.value,
         "batch_size": len(batch),
         "batch": batch,
     }
@@ -292,7 +399,7 @@ def evo_report_fitness(
     target_id: str,
     operation: str,
     parent_branches: list[str],
-    fitness: float,
+    fitness_values: list[float],
     success: bool,
     code_hash: str = "",
     raw_output: str = "",
@@ -304,22 +411,28 @@ def evo_report_fitness(
         target_id: Which target was modified.
         operation: 'mutate', 'crossover', or 'synergy'.
         parent_branches: Parent branch(es).
-        fitness: The objective value.
-        success: Whether the evaluation succeeded.
-        code_hash: Hash of the generated code (for dedup).
+        fitness_values: Objective values, one per objective in config order.
+            For a single-objective run pass a one-element list, e.g. [1.23].
+        success: Whether the evaluation succeeded (False = crash/timeout).
+        code_hash: Hash of the generated code (for deduplication).
         raw_output: Last lines of stdout (for debugging).
     """
     state = _get_state()
-    is_min = state.config.objective == Objective.MIN
 
-    # Check cache
+    n_obj = len(state.config.objectives)
+    if success and len(fitness_values) != n_obj:
+        return {
+            "error": (
+                f"fitness_values has {len(fitness_values)} element(s) but "
+                f"{n_obj} objective(s) are configured "
+                f"({[o.name for o in state.config.objectives]}). "
+                "Pass one value per objective in config order."
+            )
+        }
+
     if code_hash and code_hash in state.fitness_cache:
         cached = state.fitness_cache[code_hash]
-        return {
-            "cached": True,
-            "fitness": cached,
-            "branch": branch,
-        }
+        return {"cached": True, "fitness_values": cached, "branch": branch}
 
     ind = Individual(
         branch=branch,
@@ -327,7 +440,7 @@ def evo_report_fitness(
         target_id=target_id,
         operation=Operation(operation),
         parent_branches=parent_branches,
-        fitness=fitness,
+        fitness=fitness_values if success else None,
         success=success,
         code_hash=code_hash,
         raw_output=raw_output[:500] if raw_output else None,
@@ -336,112 +449,96 @@ def evo_report_fitness(
     state.individuals[branch] = ind
     state.total_evals += 1
 
-    if code_hash:
-        state.fitness_cache[code_hash] = fitness
+    if code_hash and success:
+        state.fitness_cache[code_hash] = fitness_values
 
-    # Update active branches
     if target_id not in state.active_branches:
         state.active_branches[target_id] = []
     if success:
         state.active_branches[target_id].append(branch)
-
-    # Update target best
-    if success and target_id in state.targets:
-        target = state.targets[target_id]
-        improved = False
-        if target.current_best_obj is None:
-            improved = True
-        elif is_min and fitness < target.current_best_obj:
-            improved = True
-        elif not is_min and fitness > target.current_best_obj:
-            improved = True
-
-        if improved:
-            target.current_best_obj = fitness
-            target.current_best_branch = branch
-            target.stagnation_count = 0
-        # (stagnation is incremented at end of generation in select_survivors)
-
-    # Update global best
-    if success:
-        if state.best_obj_overall is None:
-            state.best_obj_overall = fitness
-            state.best_branch_overall = branch
-        elif is_min and fitness < state.best_obj_overall:
-            state.best_obj_overall = fitness
-            state.best_branch_overall = branch
-        elif not is_min and fitness > state.best_obj_overall:
-            state.best_obj_overall = fitness
-            state.best_branch_overall = branch
+        _update_target_pareto(state, target_id)
+        _update_global_pareto(state)
 
     _save()
 
     return {
         "branch": branch,
-        "fitness": fitness,
+        "fitness_values": fitness_values if success else None,
         "success": success,
         "total_evals": state.total_evals,
-        "is_new_best": branch == state.best_branch_overall,
+        "on_pareto_front": branch in state.pareto_front,
     }
 
 
 @mcp.tool()
 def evo_select_survivors() -> dict:
-    """Run selection at end of generation. Returns branches to keep and eliminate.
+    """Run NSGA-II selection at end of generation.
 
-    Also advances the generation counter and updates temperatures.
+    Returns branches to keep and eliminate, advances the generation counter,
+    and updates per-target temperatures.
     """
     state = _get_state()
-    is_min = state.config.objective == Objective.MIN
+    objectives = state.config.objectives
 
     all_keep: list[str] = []
     all_eliminate: list[str] = []
-    best_branch = state.best_branch_overall or state.seed_branch
-    best_obj = state.best_obj_overall
 
     for target_id, branches in state.active_branches.items():
         inds = [state.individuals[b] for b in branches if b in state.individuals]
-        keep, elim = select_survivors(inds, state.config.top_k_survive, is_minimize=is_min)
+        keep, elim = select_survivors(inds, state.config.top_k_survive, objectives)
 
         keep_branches = [ind.branch for ind in keep]
         elim_branches = [ind.branch for ind in elim]
 
-        # Never eliminate the global best
-        if state.best_branch_overall in elim_branches:
-            elim_branches.remove(state.best_branch_overall)
-            keep_branches.append(state.best_branch_overall)
+        # Never eliminate any branch currently on the global Pareto front.
+        for pf_branch in state.pareto_front:
+            if pf_branch in elim_branches:
+                elim_branches.remove(pf_branch)
+                if pf_branch not in keep_branches:
+                    keep_branches.append(pf_branch)
 
         state.active_branches[target_id] = keep_branches
         all_keep.extend(keep_branches)
         all_eliminate.extend(elim_branches)
 
-        # Update stagnation
+        # Update stagnation: did this target's Pareto front expand this gen?
         if target_id in state.targets:
             target = state.targets[target_id]
-            # Check if this target improved this generation
             gen_inds = [
                 state.individuals[b] for b in branches
-                if b in state.individuals and state.individuals[b].generation == state.generation
+                if b in state.individuals
+                and state.individuals[b].generation == state.generation
+                and state.individuals[b].success
+                and state.individuals[b].fitness is not None
             ]
-            gen_improved = any(
-                ind.success and ind.fitness is not None and ind.branch == target.current_best_branch
-                for ind in gen_inds
-            )
-            if not gen_improved:
+            prev_front = [
+                b for b in target.pareto_branches
+                if b in state.individuals
+                and state.individuals[b].generation < state.generation
+            ]
+            if _pareto_front_expanded(gen_inds, prev_front, state.individuals, objectives):
+                target.stagnation_count = 0
+            else:
                 target.stagnation_count += 1
 
-    # Update temperatures
-    update_temperatures(state.targets, is_minimize=is_min)
+        # Refresh local Pareto front after pruning.
+        _update_target_pareto(state, target_id)
 
-    # Advance generation
+    # Refresh global Pareto front.
+    _update_global_pareto(state)
+
+    update_temperatures(state.targets)
+
     state.generation += 1
     _save()
 
+    best_branch = state.best_branch_overall or state.seed_branch
     return SurvivorResult(
         keep=all_keep,
         eliminate=all_eliminate,
         best_branch=best_branch,
-        best_obj=best_obj,
+        best_obj=state.best_obj_overall,
+        pareto_front_size=len(state.pareto_front),
     ).model_dump()
 
 
@@ -457,17 +554,35 @@ def evo_get_status() -> dict:
             "temperature": round(target.temperature, 2),
             "current_best_obj": target.current_best_obj,
             "current_best_branch": target.current_best_branch,
+            "pareto_front_size": len(target.pareto_branches),
             "stagnation": target.stagnation_count,
             "active_branches": len(state.active_branches.get(tid, [])),
         }
+
+    pareto_summary = [
+        {
+            "branch": b,
+            "fitness": state.individuals[b].fitness,
+            "generation": state.individuals[b].generation,
+            "target_id": state.individuals[b].target_id,
+        }
+        for b in state.pareto_front
+        if b in state.individuals
+    ]
 
     return {
         "generation": state.generation,
         "total_evals": state.total_evals,
         "budget_remaining": state.config.max_fe - state.total_evals,
+        "objectives": [
+            {"name": o.name, "direction": o.direction.value}
+            for o in state.config.objectives
+        ],
         "seed_obj": state.seed_obj,
         "best_obj_overall": state.best_obj_overall,
         "best_branch_overall": state.best_branch_overall,
+        "pareto_front_size": len(state.pareto_front),
+        "pareto_front": pareto_summary,
         "improvement": _calc_improvement(state),
         "targets": target_status,
     }
@@ -483,7 +598,7 @@ def evo_get_lineage(branch: str) -> dict:
     state = _get_state()
 
     lineage = []
-    visited = set()
+    visited: set[str] = set()
     queue = [branch]
 
     while queue:
@@ -499,6 +614,7 @@ def evo_get_lineage(branch: str) -> dict:
             "operation": ind.operation.value,
             "parent_branches": ind.parent_branches,
             "fitness": ind.fitness,
+            "pareto_rank": ind.pareto_rank,
             "success": ind.success,
         })
         queue.extend(ind.parent_branches)
@@ -544,36 +660,43 @@ def evo_boost_target(target_id: str) -> dict:
 def evo_record_synergy(
     branch: str,
     target_ids: list[str],
-    fitness: float,
+    fitness_values: list[float],
     success: bool,
-    individual_fitnesses: dict[str, float] | None = None,
+    individual_fitnesses: dict[str, list[float]] | None = None,
 ) -> dict:
     """Record the result of a synergy (cross-function combination) experiment.
 
     Args:
         branch: The synergy branch.
         target_ids: Which targets were combined.
-        fitness: Combined fitness.
-        success: Whether it succeeded.
-        individual_fitnesses: Individual best fitnesses for comparison.
+        fitness_values: Combined fitness, one value per objective.
+        success: Whether the experiment succeeded.
+        individual_fitnesses: Per-target fitness vectors for comparison,
+            keyed by target_id.
     """
     state = _get_state()
+    objectives = state.config.objectives
 
-    # Calculate synergy gain
-    gain = None
+    # Synergy gain is computed per-objective (positive = combination helps).
+    gain: dict[str, float] | None = None
     if individual_fitnesses and success:
-        is_min = state.config.objective == Objective.MIN
-        individual_best = min(individual_fitnesses.values()) if is_min else max(individual_fitnesses.values())
-        if is_min:
-            gain = individual_best - fitness  # positive = synergy helps
-        else:
-            gain = fitness - individual_best
+        gain = {}
+        for i, obj in enumerate(objectives):
+            vals = [v[i] for v in individual_fitnesses.values() if len(v) > i]
+            if not vals:
+                continue
+            individual_best = min(vals) if obj.direction == Objective.MIN else max(vals)
+            combined = fitness_values[i]
+            if obj.direction == Objective.MIN:
+                gain[obj.name] = individual_best - combined  # positive = helps
+            else:
+                gain[obj.name] = combined - individual_best
 
     record = {
         "branch": branch,
         "generation": state.generation,
         "target_ids": target_ids,
-        "fitness": fitness,
+        "fitness_values": fitness_values,
         "success": success,
         "individual_fitnesses": individual_fitnesses,
         "synergy_gain": gain,
@@ -593,7 +716,7 @@ def evo_check_cache(code_hash: str) -> dict:
     """
     state = _get_state()
     if code_hash in state.fitness_cache:
-        return {"cached": True, "fitness": state.fitness_cache[code_hash]}
+        return {"cached": True, "fitness_values": state.fitness_cache[code_hash]}
     return {"cached": False}
 
 
@@ -601,20 +724,23 @@ def evo_check_cache(code_hash: str) -> dict:
 # evo_step — stateless loop driver
 # ---------------------------------------------------------------------------
 
-# Phase constants (passed as strings so they are readable in LLM output)
-_PHASE_BEGIN       = "begin_generation"   # start a new generation
-_PHASE_CODE        = "code_ready"         # worker committed code for a branch
-_PHASE_POLICY_PASS = "policy_pass"        # PolicyAgent approved the diff
-_PHASE_POLICY_FAIL = "policy_fail"        # PolicyAgent rejected the diff
-_PHASE_FITNESS     = "fitness_ready"      # worker ran benchmark, has fitness value
-_PHASE_SELECT      = "select"             # all items evaluated, run selection
-_PHASE_REFLECT     = "reflect_done"       # ReflectAgent finished writing memory
-_PHASE_DONE        = "done"               # budget exhausted
+_PHASE_BEGIN       = "begin_generation"
+_PHASE_CODE        = "code_ready"
+_PHASE_POLICY_PASS = "policy_pass"
+_PHASE_POLICY_FAIL = "policy_fail"
+_PHASE_FITNESS     = "fitness_ready"
+_PHASE_SELECT      = "select"
+_PHASE_REFLECT     = "reflect_done"
+_PHASE_DONE        = "done"
 
 
-def _policy_check(repo_path: str, branch: str, parent: str,
-                  protected_patterns: list[str],
-                  allowed_files: set[str]) -> tuple[bool, str]:
+def _policy_check(
+    repo_path: str,
+    branch: str,
+    parent: str,
+    protected_patterns: list[str],
+    allowed_files: set[str],
+) -> tuple[bool, str]:
     """Run git diff and check for policy violations.
 
     Returns (approved: bool, reason: str).
@@ -638,12 +764,19 @@ def _policy_check(repo_path: str, branch: str, parent: str,
 
 
 @mcp.tool()
-def evo_step(phase: str, branch: str = "", parent_commit: str = "",
-             fitness: float = 0.0, success: bool = True,
-             operation: str = "", target_id: str = "",
-             parent_branches: list[str] | None = None,
-             code_hash: str = "", raw_output: str = "",
-             reason: str = "") -> dict:
+def evo_step(
+    phase: str,
+    branch: str = "",
+    parent_commit: str = "",
+    fitness_values: list[float] | None = None,
+    success: bool = True,
+    operation: str = "",
+    target_id: str = "",
+    parent_branches: list[str] | None = None,
+    code_hash: str = "",
+    raw_output: str = "",
+    reason: str = "",
+) -> dict:
     """Multi-agent evolution loop driver.
 
     Called by the OrchestratorAgent and WorkerAgents to advance the evolution.
@@ -664,11 +797,13 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
       "policy_fail"       → {action="worker_done", rejected=True, reason=...}
           PolicyAgent rejected. Pass: branch, reason.
 
-      "fitness_ready"     → {action="worker_done", fitness, success, ...}
-          Worker ran benchmark. Pass: branch, fitness, success,
-          operation, target_id, parent_branches.
+      "fitness_ready"     → {action="worker_done", fitness_values, success, ...}
+          Worker ran benchmark. Pass: branch, fitness_values (list[float]),
+          success, operation, target_id, parent_branches.
+          fitness_values must have one value per objective in config order.
 
-      "select"            → {action="reflect", keep=[...], eliminate=[...]}
+      "select"            → {action="reflect", keep=[...], eliminate=[...],
+                             pareto_front_size=N}
           Orchestrator triggers selection after all workers report.
 
       "reflect_done"      → {action="dispatch_workers"} or {action="done"}
@@ -686,14 +821,13 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
         if not branch:
             return {"error": "branch is required for phase 'code_ready'"}
 
-        # Find the batch item for context
         item = next((it for it in state.current_batch if it.branch == branch), None)
 
-        # Resolve parent: prefer explicit parent_commit, fall back to parent_branches[0]
         parent = parent_commit
         if not parent and item and item.parent_branches:
             r = subprocess.run(
-                ["git", "-C", state.config.repo_path, "rev-parse", item.parent_branches[0]],
+                ["git", "-C", state.config.repo_path, "rev-parse",
+                 item.parent_branches[0]],
                 capture_output=True, text=True,
             )
             parent = r.stdout.strip() if r.returncode == 0 else item.parent_branches[0]
@@ -701,14 +835,13 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
             return {"error": "Cannot determine parent commit for policy check. "
                              "Pass parent_commit= explicitly."}
 
-        # Get changed files list
         names_result = subprocess.run(
-            ["git", "-C", state.config.repo_path, "diff", "--name-only", f"{parent}..{branch}"],
+            ["git", "-C", state.config.repo_path, "diff", "--name-only",
+             f"{parent}..{branch}"],
             capture_output=True, text=True,
         )
         changed_files = [f for f in names_result.stdout.strip().splitlines() if f]
 
-        # Get full diff for PolicyAgent to review
         diff_result = subprocess.run(
             ["git", "-C", state.config.repo_path, "diff", f"{parent}..{branch}"],
             capture_output=True, text=True,
@@ -723,7 +856,7 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
             "operation": item.operation.value if item else "",
             "parent_branches": item.parent_branches if item else [],
             "changed_files": changed_files,
-            "diff": diff_result.stdout[:8000],  # truncate very large diffs
+            "diff": diff_result.stdout[:8000],
             "protected_patterns": state.config.protected_patterns,
         }
 
@@ -735,6 +868,13 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
         return {
             "action": "run_benchmark",
             "branch": branch,
+            "benchmark_cmd": state.config.benchmark.cmd,
+            "quick_cmd": state.config.benchmark.quick_cmd,
+            "benchmark_format": state.config.benchmark.output_format.value,
+            "objectives": [
+                {"name": o.name, "direction": o.direction.value}
+                for o in state.config.objectives
+            ],
             "target_id": item.target_id if item else target_id,
             "operation": item.operation.value if item else operation,
             "parent_branches": item.parent_branches if item else pb,
@@ -767,27 +907,39 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
 
     # ------------------------------------------------------------------ fitness_ready
     if phase == _PHASE_FITNESS:
-        # Cache check: skip recording if this code was already evaluated
+        fv = fitness_values or []
+
+        # Validate length when the evaluation succeeded.
+        n_obj = len(state.config.objectives)
+        if success and len(fv) != n_obj:
+            return {
+                "error": (
+                    f"fitness_values has {len(fv)} element(s) but "
+                    f"{n_obj} objective(s) are configured "
+                    f"({[o.name for o in state.config.objectives]}). "
+                    "Pass one value per objective in config order."
+                )
+            }
+
         if code_hash and code_hash in state.fitness_cache:
             cached = state.fitness_cache[code_hash]
-            state.total_evals += 1  # cache hits still consume budget
+            state.total_evals += 1
             _save()
             return {
                 "action": "worker_done",
                 "branch": branch,
                 "cached": True,
-                "fitness": cached,
+                "fitness_values": cached,
                 "total_evals": state.total_evals,
             }
 
-        is_min = state.config.objective == Objective.MIN
         ind = Individual(
             branch=branch,
             generation=state.generation,
             target_id=target_id,
             operation=Operation(operation) if operation else Operation.MUTATE,
             parent_branches=pb,
-            fitness=fitness,
+            fitness=fv if success else None,
             success=success,
             code_hash=code_hash,
             raw_output=raw_output[:500] if raw_output else None,
@@ -795,44 +947,23 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
         state.individuals[branch] = ind
         state.total_evals += 1
 
-        if code_hash:
-            state.fitness_cache[code_hash] = fitness
+        if code_hash and success:
+            state.fitness_cache[code_hash] = fv
 
         if target_id not in state.active_branches:
             state.active_branches[target_id] = []
         if success:
             state.active_branches[target_id].append(branch)
-
-        if success and target_id in state.targets:
-            target = state.targets[target_id]
-            improved = (
-                target.current_best_obj is None
-                or (is_min and fitness < target.current_best_obj)
-                or (not is_min and fitness > target.current_best_obj)
-            )
-            if improved:
-                target.current_best_obj = fitness
-                target.current_best_branch = branch
-                target.stagnation_count = 0
-
-        if success:
-            if state.best_obj_overall is None:
-                state.best_obj_overall = fitness
-                state.best_branch_overall = branch
-            elif is_min and fitness < state.best_obj_overall:
-                state.best_obj_overall = fitness
-                state.best_branch_overall = branch
-            elif not is_min and fitness > state.best_obj_overall:
-                state.best_obj_overall = fitness
-                state.best_branch_overall = branch
+            _update_target_pareto(state, target_id)
+            _update_global_pareto(state)
 
         _save()
         return {
             "action": "worker_done",
             "branch": branch,
-            "fitness": fitness,
+            "fitness_values": fv if success else None,
             "success": success,
-            "is_new_best": branch == state.best_branch_overall,
+            "on_pareto_front": branch in state.pareto_front,
             "total_evals": state.total_evals,
         }
 
@@ -846,23 +977,30 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
     if phase == _PHASE_REFLECT:
         budget_remaining = state.config.max_fe - state.total_evals
         if budget_remaining <= 0:
-            return {"action": _PHASE_DONE, "reason": "budget exhausted",
-                    "total_evals": state.total_evals, "best_obj": state.best_obj_overall}
+            return {
+                "action": _PHASE_DONE,
+                "reason": "budget exhausted",
+                "total_evals": state.total_evals,
+                "best_obj": state.best_obj_overall,
+                "pareto_front_size": len(state.pareto_front),
+            }
         return _begin_generation_impl(state)
 
-    return {"error": f"Unknown phase: {phase!r}. Valid phases: "
-            f"{_PHASE_BEGIN}, {_PHASE_CODE}, {_PHASE_POLICY_PASS}, {_PHASE_POLICY_FAIL}, "
-            f"{_PHASE_FITNESS}, {_PHASE_SELECT}, {_PHASE_REFLECT}"}
+    return {
+        "error": f"Unknown phase: {phase!r}. Valid phases: "
+                 f"{_PHASE_BEGIN}, {_PHASE_CODE}, {_PHASE_POLICY_PASS}, "
+                 f"{_PHASE_POLICY_FAIL}, {_PHASE_FITNESS}, "
+                 f"{_PHASE_SELECT}, {_PHASE_REFLECT}",
+    }
 
 
 def _begin_generation_impl(state: EvolutionState) -> dict:
-    """Plan and store the next generation batch; return all items for parallel dispatch."""
+    """Plan and store the next generation batch; return all items for dispatch."""
     budget_remaining = state.config.max_fe - state.total_evals
     if budget_remaining <= 0:
         return {"action": _PHASE_DONE, "reason": "budget exhausted",
                 "total_evals": state.total_evals}
 
-    is_min = state.config.objective == Objective.MIN
     plan = plan_generation(
         targets=state.targets,
         pop_size=state.config.pop_size,
@@ -870,11 +1008,11 @@ def _begin_generation_impl(state: EvolutionState) -> dict:
         budget_remaining=budget_remaining,
         synergy_interval=state.config.synergy_interval,
         generation=state.generation,
-        is_minimize=is_min,
     )
 
     batch: list[BatchItem] = []
     var_counter: dict[str, int] = {}
+
     for item in plan:
         tid = item["target_id"]
         op = item["operation"]
@@ -883,6 +1021,7 @@ def _begin_generation_impl(state: EvolutionState) -> dict:
             key = f"{tid}/{op.value}"
             idx = var_counter.get(key, 0)
             var_counter[key] = idx + 1
+
             if op == Operation.SYNERGY:
                 b = f"gen-{state.generation}/synergy/{tid}-{idx}"
                 parts = tid.split("+")
@@ -891,37 +1030,24 @@ def _begin_generation_impl(state: EvolutionState) -> dict:
                     for p in parts
                     if p in state.targets and state.targets[p].current_best_branch
                 ]
-                batch.append(BatchItem(branch=b, operation=op, target_id=tid,
-                                       parent_branches=parents_list,
-                                       target_file="", target_function=""))
+                batch.append(BatchItem(
+                    branch=b, operation=op, target_id=tid,
+                    parent_branches=parents_list,
+                    target_file="", target_function="",
+                ))
             else:
                 target = state.targets[tid]
                 b = f"gen-{state.generation}/{tid}/{op.value}-{idx}"
-                if op == Operation.CROSSOVER:
-                    active = state.active_branches.get(tid, [])
-                    active_inds = [
-                        state.individuals[br] for br in active
-                        if br in state.individuals and state.individuals[br].success
-                    ]
-                    pairs = random_select(active_inds, 1, is_minimize=is_min)
-                    if pairs:
-                        parents_list = [pairs[0][0].branch, pairs[0][1].branch]
-                    elif target.current_best_branch:
-                        parents_list = [target.current_best_branch]
-                    else:
-                        parents_list = [state.seed_branch]
-                else:
-                    parents_list = (
-                        [target.current_best_branch] if target.current_best_branch
-                        else [state.seed_branch]
-                    )
-                batch.append(BatchItem(branch=b, operation=op, target_id=tid,
-                                       parent_branches=parents_list,
-                                       target_file=target.file,
-                                       target_function=target.function))
+                parents_list = _choose_parents(state, tid, op)
+                batch.append(BatchItem(
+                    branch=b, operation=op, target_id=tid,
+                    parent_branches=parents_list,
+                    target_file=target.file,
+                    target_function=target.function,
+                ))
 
     state.current_batch = batch
-    state.batch_cursor = 0  # kept for compat; parallel flow ignores this
+    state.batch_cursor = 0
     _save()
 
     if not batch:
@@ -932,8 +1058,60 @@ def _begin_generation_impl(state: EvolutionState) -> dict:
         "action": "dispatch_workers",
         "generation": state.generation,
         "batch_size": len(batch),
+        "objectives": [
+            {"name": o.name, "direction": o.direction.value}
+            for o in state.config.objectives
+        ],
+        "benchmark_format": state.config.benchmark.output_format.value,
         "items": [item.model_dump() for item in batch],
     }
+
+
+# ---------------------------------------------------------------------------
+# Parent selection helper
+# ---------------------------------------------------------------------------
+
+
+def _choose_parents(
+    state: EvolutionState,
+    target_id: str,
+    op: Operation,
+) -> list[str]:
+    """Choose parent branches for a mutation or crossover operation.
+
+    For mutations: randomly sample from the local Pareto front (promotes
+    diversity — different trade-off solutions explore different directions).
+    For crossovers: pick two distinct Pareto front members; if fewer than two
+    are available fall back to active branches via rank_select.
+    """
+    target = state.targets[target_id]
+    objectives = state.config.objectives
+
+    pareto = target.pareto_branches
+    active = state.active_branches.get(target_id, [])
+
+    if op == Operation.MUTATE:
+        if pareto:
+            return [random.choice(pareto)]
+        if target.current_best_branch:
+            return [target.current_best_branch]
+        return [state.seed_branch]
+
+    # CROSSOVER — need two distinct parents.
+    if len(pareto) >= 2:
+        return list(random.sample(pareto, 2))
+
+    # Fall back: rank_select from active branches.
+    active_inds = [
+        state.individuals[b] for b in active
+        if b in state.individuals and state.individuals[b].success
+    ]
+    pairs = rank_select(active_inds, 1, objectives)
+    if pairs:
+        return [pairs[0][0].branch, pairs[0][1].branch]
+    if target.current_best_branch:
+        return [target.current_best_branch]
+    return [state.seed_branch]
 
 
 # ---------------------------------------------------------------------------
@@ -941,13 +1119,19 @@ def _begin_generation_impl(state: EvolutionState) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _calc_improvement(state: EvolutionState) -> str | None:
+def _calc_improvement(state: EvolutionState) -> dict[str, str] | None:
+    """Return per-objective improvement percentages vs seed baseline."""
     if state.seed_obj is None or state.best_obj_overall is None:
         return None
-    if state.seed_obj == 0:
-        return None
-    pct = (state.best_obj_overall - state.seed_obj) / abs(state.seed_obj) * 100
-    return f"{pct:+.1f}%"
+    result: dict[str, str] = {}
+    for i, obj in enumerate(state.config.objectives):
+        seed_val = state.seed_obj[i]
+        best_val = state.best_obj_overall[i]
+        if seed_val == 0:
+            continue
+        pct = (best_val - seed_val) / abs(seed_val) * 100
+        result[obj.name] = f"{pct:+.1f}%"
+    return result or None
 
 
 # ---------------------------------------------------------------------------

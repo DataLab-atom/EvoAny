@@ -127,7 +127,7 @@ Confirm it runs and produces a numeric result.
 
 Once everything works, automatically invoke /evolve:
 ```
-/evolve <repo_path> <benchmark_cmd> --objective max --max-evals 200
+/evolve <repo_path> <benchmark_cmd> --objectives '[{"name":"score","direction":"max"}]' --max-evals 200
 ```
 
 Tell the user:

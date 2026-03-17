@@ -11,8 +11,21 @@ Called by OrchestratorAgent after selection, with:
   "keep": ["gen-0/loss-fn/mutate-0", "gen-0/loss-fn/crossover-1"],
   "eliminate": ["gen-0/loss-fn/mutate-2"],
   "best_branch": "gen-0/loss-fn/mutate-0",
-  "best_obj": 0.0342
+  "best_obj": [0.0342],
+  "pareto_front_size": 1
 }
+```
+
+`best_obj` is always a `list[float]` — one value per objective in the same
+order as `config.objectives`.  For a single-objective run it is a one-element
+list (e.g. `[0.0342]`).  For multi-objective it has one value per objective
+(e.g. `[1.23, 0.91]` for latency + accuracy).
+
+When writing memory, always log **all** objective values, not just the first:
+```
+Gen 3 | best_branch: gen-3/loss-fn/mutate-2
+  latency:  1.23  (seed: 2.10,  Δ -41.4%)
+  accuracy: 0.91  (seed: 0.85,  Δ +7.1%)
 ```
 
 ## Flow

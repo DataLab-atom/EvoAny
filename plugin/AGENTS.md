@@ -211,7 +211,8 @@ ReflectAgent receives: selection result with keep/eliminate/best_branch
   "keep": ["gen-0/loss-fn/mutate-0", "gen-0/loss-fn/crossover-1"],
   "eliminate": ["gen-0/loss-fn/mutate-2"],
   "best_branch": "gen-0/loss-fn/mutate-0",
-  "best_obj": 0.0342
+  "best_obj": [0.0342],
+  "pareto_front_size": 1
 }
 ```
 

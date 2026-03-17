@@ -16,6 +16,19 @@ A single `item` from the batch:
 }
 ```
 
+The `begin_generation` response also tells you:
+```json
+{
+  "objectives": [
+    {"name": "latency", "direction": "min"},
+    {"name": "accuracy", "direction": "max"}
+  ],
+  "benchmark_format": "numbers"
+}
+```
+
+Keep these in scope — you need them in step 3.
+
 ## Flow
 
 ### 1. CodeGen — generate the variant
@@ -107,6 +120,7 @@ Hand the `step` to **PolicyAgent** for review.
 - If PolicyAgent approves:
   ```
   step = evo_step("policy_pass", branch=item.branch)
+  # Returns: {action: "run_benchmark", benchmark_cmd, benchmark_format, objectives, ...}
   ```
 
 - If PolicyAgent rejects:
@@ -126,10 +140,10 @@ git worktree add /tmp/eval-{branch} {step.branch}
 #### Short benchmark (<30s, e.g. unit eval, small dataset)
 
 ```
-exec cd /tmp/eval-{branch} && {benchmark_cmd}
+exec cd /tmp/eval-{branch} && {step.benchmark_cmd}
 ```
 
-Capture stdout + stderr. Parse fitness from last line.
+Capture stdout + stderr.
 
 #### Long benchmark (>30s, e.g. GPU training, large eval set)
 
@@ -138,7 +152,7 @@ Capture stdout + stderr. Parse fitness from last line.
 ```bash
 # Start benchmark in a named tmux session
 tmux new-session -d -s eval-{short_branch_id} \
-  "cd /tmp/eval-{branch} && {benchmark_cmd} 2>&1 | tee /tmp/eval-{branch}/output.log; echo EXIT_CODE:$? >> /tmp/eval-{branch}/output.log"
+  "cd /tmp/eval-{branch} && {step.benchmark_cmd} 2>&1 | tee /tmp/eval-{branch}/output.log; echo EXIT_CODE:$? >> /tmp/eval-{branch}/output.log"
 ```
 
 Poll until done:
@@ -162,21 +176,62 @@ tmux kill-session -t eval-{short_branch_id}  # cleanup
 git worktree remove /tmp/eval-{branch}
 ```
 
+#### Parsing fitness from output
+
+Use `step.benchmark_format` to decide how to parse:
+
+**`benchmark_format == "numbers"` (default)**
+
+Parse the last non-empty line of stdout as whitespace-separated numbers,
+one per objective in the order given by `step.objectives`.
+
+```
+# Single-objective example — last line: "42.7"
+fitness_values = [42.7]
+
+# Multi-objective example — last line: "1.23 0.91"
+# objectives: [latency (min), accuracy (max)]
+fitness_values = [1.23, 0.91]
+```
+
+**`benchmark_format == "json"`**
+
+Parse the last non-empty line of stdout as a JSON object.
+Extract values in objective order.
+
+```
+# Last line: {"latency": 1.23, "accuracy": 0.91}
+# objectives: [latency, accuracy]
+fitness_values = [1.23, 0.91]
+```
+
 If the variant crashes (after static check passed):
 - Trivial runtime fix (wrong tensor dtype, device mismatch): fix, re-commit, retry `evo_step("code_ready")`
-- Logic error: report `success=False`
+- Logic error: report `success=False` with `fitness_values=[]`
 
 ### 4. Report
 
 ```
 evo_step("fitness_ready",
          branch=step.branch,
-         fitness=fitness,
+         fitness_values=fitness_values,   # list[float], one per objective
          success=true/false,
          operation=step.operation,
          target_id=step.target_id,
          parent_branches=step.parent_branches)
 ```
+
+**Single-objective example:**
+```
+evo_step("fitness_ready", branch=..., fitness_values=[42.7], success=True, ...)
+```
+
+**Multi-objective example:**
+```
+evo_step("fitness_ready", branch=..., fitness_values=[1.23, 0.91], success=True, ...)
+```
+
+The response includes `on_pareto_front: true/false` — log this for the user.
 
 ## Tools
 
