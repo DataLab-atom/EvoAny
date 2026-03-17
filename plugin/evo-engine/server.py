@@ -766,6 +766,9 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
                 capture_output=True, text=True,
             )
             parent = r.stdout.strip() if r.returncode == 0 else item.parent_branches[0]
+        if not parent:
+            return {"error": "Cannot determine parent commit for policy check. "
+                             "Pass parent_commit= explicitly."}
 
         approved, reason = _policy_check(
             repo_path=state.config.repo_path,
@@ -788,11 +791,11 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
                 raw_output=f"policy_violation: {reason}",
             )
             state.individuals[branch] = ind
-            _save()
-            # Advance cursor and return next item (or select)
             state.batch_cursor += 1
             _save()
-            return _next_item_or_select(state)
+            next_step = _next_item_or_select(state)
+            next_step["policy_violation"] = {"branch": branch, "reason": reason}
+            return next_step
 
         # Approved — tell LLM to run the benchmark
         return {
@@ -860,7 +863,9 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
 
     # ------------------------------------------------------------------ select
     if phase == _PHASE_SELECT:
-        return evo_select_survivors()
+        result = evo_select_survivors()
+        result["action"] = "reflect"
+        return result
 
     # ------------------------------------------------------------------ reflect_done
     if phase == _PHASE_REFLECT:
