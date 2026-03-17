@@ -67,6 +67,12 @@ mcp = FastMCP("evo-engine", instructions="U2E evolutionary algorithm bookkeeping
 _STATE_DIR = os.environ.get("U2E_STATE_DIR", os.path.expanduser("~/.openclaw/u2e-state"))
 _state: EvolutionState | None = None
 
+# Structural operators for random assignment in batch planning.
+_STRUCTURAL_OPS = [
+    "insert", "merge", "decouple", "split", "extract",
+    "parallelize", "pipeline", "stratify", "cache",
+]
+
 
 def _state_path() -> Path:
     return Path(_STATE_DIR) / "state.json"
@@ -356,6 +362,7 @@ def evo_next_batch() -> dict:
         targets=state.targets,
         pop_size=state.config.pop_size,
         mutation_rate=state.config.mutation_rate,
+        structural_rate=state.config.structural_rate,
         budget_remaining=budget_remaining,
         synergy_interval=state.config.synergy_interval,
         generation=state.generation,
@@ -394,6 +401,9 @@ def evo_next_batch() -> dict:
                 target = state.targets[tid]
                 branch = f"gen-{state.generation}/{tid}/{op.value}-{idx}"
                 parents = _choose_parents(state, tid, op)
+                structural_op = (
+                    random.choice(_STRUCTURAL_OPS) if op == Operation.STRUCTURAL else ""
+                )
                 batch.append(BatchItem(
                     branch=branch,
                     operation=op,
@@ -401,6 +411,9 @@ def evo_next_batch() -> dict:
                     parent_branches=parents,
                     target_file=target.file,
                     target_function=target.function,
+                    target_description=target.description,
+                    target_hint=target.hint,
+                    structural_op=structural_op,
                 ).model_dump())
 
     # Store batch so evo_step("code_ready") can look up item metadata.
@@ -1167,13 +1180,6 @@ def _calc_improvement(state: EvolutionState) -> dict[str, str] | None:
         pct = (best_val - seed_val) / abs(seed_val) * 100
         result[obj.name] = f"{pct:+.1f}%"
     return result or None
-
-
-# Structural operators available for random assignment in batch planning.
-_STRUCTURAL_OPS = [
-    "insert", "merge", "decouple", "split", "extract",
-    "parallelize", "pipeline", "stratify", "cache",
-]
 
 
 def _write_directions_to_memory(directions: list[str]) -> None:
