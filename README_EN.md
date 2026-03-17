@@ -186,13 +186,13 @@ evo-engine
 python -m plugin.evo-engine.server
 ```
 
-Available MCP tools: `evo_init`, `evo_register_targets`, `evo_next_batch`, `evo_report_fitness`, `evo_select_survivors`, `evo_get_status`, `evo_get_lineage`, `evo_freeze_target`, `evo_boost_target`, `evo_record_synergy`, `evo_check_cache`.
+Available MCP tools: `evo_init`, `evo_register_targets`, `evo_report_seed`, `evo_step`, `evo_next_batch`, `evo_report_fitness`, `evo_select_survivors`, `evo_get_status`, `evo_get_lineage`, `evo_freeze_target`, `evo_boost_target`, `evo_record_synergy`, `evo_check_cache`.
 
 ---
 
 ### Optional Configuration
 
-Evolution state is stored in `~/.openclaw/evo-state/` by default. Override with an environment variable (`U2E` stands for *Understanding to Excelling*, the paper's acronym):
+Evolution state is stored in `~/.openclaw/u2e-state/` by default. Override with an environment variable (`U2E` stands for *Understanding to Excelling*, the paper's acronym):
 
 ```bash
 export U2E_STATE_DIR=/path/to/your/state
@@ -271,7 +271,7 @@ The best result of each generation is tagged (`best-gen-{N}`), and the final `be
 ## Repository Structure
 
 ```
-Evo-anythin/
+Evo-anything/
 ├── LICENSE
 ├── README.md
 ├── README_EN.md
@@ -280,6 +280,12 @@ Evo-anythin/
     ├── AGENTS.md              # evolution protocol (core loop)
     ├── SOUL.md                # agent persona
     ├── TOOLS.md               # tool usage conventions
+    ├── agents/                # per-agent behavior specs
+    │   ├── orchestrator.md    # OrchestratorAgent
+    │   ├── worker.md          # WorkerAgent
+    │   ├── policy_agent.md    # PolicyAgent
+    │   ├── reflect_agent.md   # ReflectAgent
+    │   └── map_agent.md       # MapAgent
     ├── evo-engine/            # evolution engine (MCP server)
     │   ├── server.py          # MCP tool interface
     │   ├── models.py          # data models
