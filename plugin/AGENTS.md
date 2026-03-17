@@ -14,36 +14,63 @@ You evolve code in a target git repository by running generations of:
 
 ## Core Loop
 
-```
-Call evo_init → set up evolution state
-Call evo_register_targets → define what to optimize
+The loop is driven by `evo_step`.  Each call returns `{action, ...data}`.
+You execute `action`, then call `evo_step` again with the result.
+**You decide whether to stop** — check `action == "done"` or user intent.
 
-WHILE evo_get_status shows budget remaining:
-  1. Call evo_next_batch → get [{branch, op, target, parents}]
-  2. For each operation:
-     a. git checkout -b <branch> from parent
-     b. Read target function code
-     c. Read memory/ for this target (long_term + failures)
-     d. Generate variant (mutate or crossover via LLM)
-     e. Write code change, git commit
-  3. For each branch to evaluate:
-     a. git worktree add <path> <branch>
-     b. Run benchmark command in worktree
-     c. Parse fitness from output
-     d. Call evo_report_fitness with result
-     e. git worktree remove <path>
-  4. Call evo_select_survivors → get keep/eliminate lists
-  5. Delete eliminated branches
-  6. Tag best: git tag best-gen-{N}
-  7. Reflect:
-     a. git diff best..second_best → short-term reflection
-     b. Write to memory/targets/{id}/short_term/gen_{N}.md
-     c. Synthesize long_term.md from accumulated short_term
-     d. Record failures to memory/targets/{id}/failures.md
-  8. Every 3 generations: synergy check
-     a. Cherry-pick best of each target into one branch
-     b. Evaluate combined fitness
-     c. Record synergy results
+```
+Call evo_init            → set up evolution state
+Call evo_register_targets → define what to optimize
+step = evo_step("begin_generation")
+
+LOOP:
+  if step.action == "done":
+      break                          ← you decide to stop here
+
+  if step.action == "generate_code":
+      item = step.item
+      a. git checkout -b item.branch  from item.parent_branches[0]
+      b. Read target function code
+      c. Read memory/ for this target (long_term + failures)
+      d. Generate variant (mutate or crossover via LLM)
+      e. Write code change, git commit
+      f. record parent_commit = git rev-parse item.parent_branches[0]
+      step = evo_step("code_ready",
+                      branch=item.branch,
+                      parent_commit=parent_commit)
+      # server runs policy check here — no LLM involvement
+
+  elif step.action == "run_benchmark":
+      a. git worktree add <path> step.branch
+      b. Run benchmark command in worktree
+      c. Parse fitness from output
+      d. git worktree remove <path>
+      step = evo_step("fitness_ready",
+                      branch=step.branch,
+                      fitness=<value>, success=<bool>,
+                      operation=<op>, target_id=<tid>,
+                      parent_branches=[...])
+
+  elif step.action == "skip":
+      # policy violation — already recorded by server, no benchmark needed
+      step = evo_step("begin_generation")   ← or wait for select signal
+
+  elif step.action == "select":
+      step = evo_step("select")
+      # returns keep/eliminate lists
+      a. Delete eliminated branches
+      b. Tag best: git tag best-gen-{N}
+      # then reflect
+      c. git diff best..second_best → short-term reflection
+      d. Write to memory/targets/{id}/short_term/gen_{N}.md
+      e. Synthesize long_term.md from accumulated short_term
+      f. Record failures to memory/targets/{id}/failures.md
+      g. Every 3 generations: synergy check
+         - Cherry-pick best of each target into one branch
+         - Evaluate combined fitness  (use evo_step "code_ready"→"fitness_ready")
+         - Record synergy results via evo_record_synergy
+      step = evo_step("reflect_done")
+      # server checks budget and returns action="begin_generation" or "done"
 ```
 
 ## Memory Layout
@@ -71,56 +98,24 @@ Tags: `seed-baseline`, `best-gen-{N}`, `best-overall`
 
 ## Evaluation Protocol
 
-1. **Policy check** — run PolicyAgent BEFORE any evaluation (see below). Reject violating branches immediately.
-2. **Static check** — read generated code, fix obvious issues (missing imports, syntax errors). Do NOT fix algorithm logic.
-3. **Quick eval** — if quick_cmd is configured, run it first to filter obvious failures.
+Policy enforcement is **server-side** inside `evo_step("code_ready", ...)`.
+You do not need to run a separate policy check — the server does it automatically
+when you report that code is ready.
+
+1. **Policy check** — automatic, runs inside `evo_step("code_ready")`.
+   Server diffs `parent_commit..branch`, checks against `protected_patterns`
+   and declared target files.  Returns `action="skip"` on violation (already
+   recorded); returns `action="run_benchmark"` on pass.
+2. **Static check** — before committing: fix obvious issues (missing imports,
+   syntax errors). Do NOT fix algorithm logic.
+3. **Quick eval** — if quick_cmd is configured, run it first to filter failures.
 4. **Full eval** — run full benchmark only on candidates that pass quick eval.
 
 If a variant crashes:
 - Read the traceback
-- If it's a trivial fix (missing import, typo, type mismatch): fix it, re-commit, re-evaluate
-- If it's an algorithm logic error: mark as failed, record in failures.md
-
-## PolicyAgent
-
-**Role**: Gate-keeper that audits every candidate branch before evaluation. Runs as the first step in the evaluation pipeline.
-
-**Trigger**: Called for each branch produced by CodeGenAgent, before static check and before any benchmark execution.
-
-**Procedure**:
-
-```
-1. Obtain the diff:
-     exec git -C <repo> diff <parent_commit>..<branch_tip> -- <files>
-   Or for the full tree:
-     exec git -C <repo> diff <parent_commit>..<branch_tip> --name-only
-
-2. Collect protected file patterns from evo_init config:
-   - benchmark_cmd source file(s) (e.g. benchmark.py, eval.py, run_eval.sh)
-   - Any file listed under "eval_scripts" in the evolution config
-   - Default patterns if not configured:
-       benchmark*.py  eval*.py  evaluate*.py  run_eval*  test_bench*
-
-3. For each changed file in the diff:
-   a. If it matches a protected pattern → VIOLATION
-   b. If it is outside the declared optimization targets → VIOLATION
-   c. If its function signature (def line or class interface) changed → VIOLATION
-
-4. On VIOLATION:
-   - Do NOT run the benchmark
-   - Call evo_report_fitness with fitness=null and status="policy_violation"
-   - Append to memory/targets/{id}/failures.md:
-       ## Gen {N} — Policy Violation
-       Branch: <branch>
-       Reason: <which file / which rule was broken>
-   - Log to console: "PolicyAgent: REJECTED <branch> — <reason>"
-
-5. On PASS:
-   - Log: "PolicyAgent: APPROVED <branch>"
-   - Proceed to Static check → Quick eval → Full eval
-```
-
-**PolicyAgent never fixes violations** — it only approves or rejects. It does not attempt to revert changes or patch the branch.
+- If it's a trivial fix (missing import, typo, type mismatch): fix it, re-commit,
+  then call `evo_step("code_ready", ...)` again with the new commit
+- If it's an algorithm logic error: report via `evo_step("fitness_ready", success=False)`
 
 ## Constraints
 
