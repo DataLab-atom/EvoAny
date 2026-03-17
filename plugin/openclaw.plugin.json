@@ -14,5 +14,6 @@
       }
     }
   },
-  "skills": ["./skills"]
+  "skills": ["./skills"],
+  "agents": ["./agents"]
 }

@@ -602,12 +602,14 @@ def evo_check_cache(code_hash: str) -> dict:
 # ---------------------------------------------------------------------------
 
 # Phase constants (passed as strings so they are readable in LLM output)
-_PHASE_BEGIN   = "begin_generation"   # start a new generation
-_PHASE_CODE    = "code_ready"         # LLM committed code for a branch
-_PHASE_FITNESS = "fitness_ready"      # LLM ran benchmark, has fitness value
-_PHASE_SELECT  = "select"             # all items evaluated, run selection
-_PHASE_REFLECT = "reflect_done"       # LLM finished writing memory
-_PHASE_DONE    = "done"               # budget exhausted
+_PHASE_BEGIN       = "begin_generation"   # start a new generation
+_PHASE_CODE        = "code_ready"         # worker committed code for a branch
+_PHASE_POLICY_PASS = "policy_pass"        # PolicyAgent approved the diff
+_PHASE_POLICY_FAIL = "policy_fail"        # PolicyAgent rejected the diff
+_PHASE_FITNESS     = "fitness_ready"      # worker ran benchmark, has fitness value
+_PHASE_SELECT      = "select"             # all items evaluated, run selection
+_PHASE_REFLECT     = "reflect_done"       # ReflectAgent finished writing memory
+_PHASE_DONE        = "done"               # budget exhausted
 
 
 def _policy_check(repo_path: str, branch: str, parent: str,
@@ -640,26 +642,37 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
              fitness: float = 0.0, success: bool = True,
              operation: str = "", target_id: str = "",
              parent_branches: list[str] | None = None,
-             code_hash: str = "", raw_output: str = "") -> dict:
-    """Stateless evolution loop driver.
+             code_hash: str = "", raw_output: str = "",
+             reason: str = "") -> dict:
+    """Multi-agent evolution loop driver.
 
-    Call this in a loop; each call returns the next action to perform.
-    The LLM decides whether to continue (stop when action=="done").
+    Called by the OrchestratorAgent and WorkerAgents to advance the evolution.
+    Each call returns the next action to perform.
 
-    Phases and what to pass:
-      "begin_generation"  — start (or resume) a generation; no extra args needed.
-      "code_ready"        — you committed code for `branch` (parent at
-                            `parent_commit`). Server runs policy check and
-                            returns action="run_benchmark" on pass, or the next
-                            action (generate_code / select) with policy_violation
-                            set if the branch was rejected.
-      "fitness_ready"     — you ran the benchmark; pass fitness / success /
-                            operation / target_id / parent_branches.
-                            Returns next generate_code or action="select".
-      "select"            — trigger survivor selection. Returns action="reflect"
-                            with keep/eliminate lists.
-      "reflect_done"      — you finished writing memory. Server starts next
-                            generation and returns generate_code or action="done".
+    Phases and what to pass → what is returned:
+
+      "begin_generation"  → {action="dispatch_workers", items=[...]}
+          Start a new generation. Returns ALL batch items for parallel dispatch.
+
+      "code_ready"        → {action="check_policy", diff=..., changed_files=...}
+          Worker committed code. Pass: branch, parent_commit.
+          Returns diff + metadata for PolicyAgent to review.
+
+      "policy_pass"       → {action="run_benchmark", branch, target_id, ...}
+          PolicyAgent approved. Pass: branch.
+
+      "policy_fail"       → {action="worker_done", rejected=True, reason=...}
+          PolicyAgent rejected. Pass: branch, reason.
+
+      "fitness_ready"     → {action="worker_done", fitness, success, ...}
+          Worker ran benchmark. Pass: branch, fitness, success,
+          operation, target_id, parent_branches.
+
+      "select"            → {action="reflect", keep=[...], eliminate=[...]}
+          Orchestrator triggers selection after all workers report.
+
+      "reflect_done"      → {action="dispatch_workers"} or {action="done"}
+          ReflectAgent finished. Server starts next generation or ends.
     """
     state = _get_state()
     pb = parent_branches or []
@@ -673,11 +686,8 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
         if not branch:
             return {"error": "branch is required for phase 'code_ready'"}
 
-        # Find the batch item to get allowed files
+        # Find the batch item for context
         item = next((it for it in state.current_batch if it.branch == branch), None)
-        allowed: set[str] = set()
-        if item and item.target_file:
-            allowed = {item.target_file}
 
         # Resolve parent: prefer explicit parent_commit, fall back to parent_branches[0]
         parent = parent_commit
@@ -691,38 +701,68 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
             return {"error": "Cannot determine parent commit for policy check. "
                              "Pass parent_commit= explicitly."}
 
-        approved, reason = _policy_check(
-            repo_path=state.config.repo_path,
-            branch=branch,
-            parent=parent,
-            protected_patterns=state.config.protected_patterns,
-            allowed_files=allowed,
+        # Get changed files list
+        names_result = subprocess.run(
+            ["git", "-C", state.config.repo_path, "diff", "--name-only", f"{parent}..{branch}"],
+            capture_output=True, text=True,
+        )
+        changed_files = [f for f in names_result.stdout.strip().splitlines() if f]
+
+        # Get full diff for PolicyAgent to review
+        diff_result = subprocess.run(
+            ["git", "-C", state.config.repo_path, "diff", f"{parent}..{branch}"],
+            capture_output=True, text=True,
         )
 
-        if not approved:
-            ind = Individual(
-                branch=branch,
-                generation=state.generation,
-                target_id=item.target_id if item else "",
-                operation=item.operation if item else Operation.MUTATE,
-                parent_branches=item.parent_branches if item else [],
-                fitness=None,
-                success=False,
-                raw_output=f"policy_violation: {reason}",
-            )
-            state.individuals[branch] = ind
-            state.batch_cursor += 1
-            _save()
-            next_step = _next_item_or_select(state)
-            next_step["policy_violation"] = {"branch": branch, "reason": reason}
-            return next_step
+        return {
+            "action": "check_policy",
+            "branch": branch,
+            "parent_commit": parent,
+            "target_id": item.target_id if item else "",
+            "target_file": item.target_file if item else "",
+            "operation": item.operation.value if item else "",
+            "parent_branches": item.parent_branches if item else [],
+            "changed_files": changed_files,
+            "diff": diff_result.stdout[:8000],  # truncate very large diffs
+            "protected_patterns": state.config.protected_patterns,
+        }
 
+    # ------------------------------------------------------------------ policy_pass
+    if phase == _PHASE_POLICY_PASS:
+        if not branch:
+            return {"error": "branch is required for phase 'policy_pass'"}
+        item = next((it for it in state.current_batch if it.branch == branch), None)
         return {
             "action": "run_benchmark",
             "branch": branch,
-            "target_id": item.target_id if item else "",
-            "operation": item.operation.value if item else "",
-            "parent_branches": item.parent_branches if item else [],
+            "target_id": item.target_id if item else target_id,
+            "operation": item.operation.value if item else operation,
+            "parent_branches": item.parent_branches if item else pb,
+        }
+
+    # ------------------------------------------------------------------ policy_fail
+    if phase == _PHASE_POLICY_FAIL:
+        if not branch:
+            return {"error": "branch is required for phase 'policy_fail'"}
+        item = next((it for it in state.current_batch if it.branch == branch), None)
+        fail_reason = reason or raw_output or "policy violation"
+        ind = Individual(
+            branch=branch,
+            generation=state.generation,
+            target_id=item.target_id if item else target_id,
+            operation=item.operation if item else Operation.MUTATE,
+            parent_branches=item.parent_branches if item else pb,
+            fitness=None,
+            success=False,
+            raw_output=f"policy_violation: {fail_reason}",
+        )
+        state.individuals[branch] = ind
+        _save()
+        return {
+            "action": "worker_done",
+            "branch": branch,
+            "rejected": True,
+            "reason": fail_reason,
         }
 
     # ------------------------------------------------------------------ fitness_ready
@@ -730,12 +770,13 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
         # Cache check: skip recording if this code was already evaluated
         if code_hash and code_hash in state.fitness_cache:
             cached = state.fitness_cache[code_hash]
-            state.batch_cursor += 1
             _save()
-            next_step = _next_item_or_select(state)
-            next_step["cached"] = True
-            next_step["cached_fitness"] = cached
-            return next_step
+            return {
+                "action": "worker_done",
+                "branch": branch,
+                "cached": True,
+                "fitness": cached,
+            }
 
         is_min = state.config.objective == Objective.MIN
         ind = Individual(
@@ -783,12 +824,15 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
                 state.best_obj_overall = fitness
                 state.best_branch_overall = branch
 
-        state.batch_cursor += 1
         _save()
-        result = _next_item_or_select(state)
-        result["recorded_fitness"] = fitness
-        result["is_new_best"] = branch == state.best_branch_overall
-        return result
+        return {
+            "action": "worker_done",
+            "branch": branch,
+            "fitness": fitness,
+            "success": success,
+            "is_new_best": branch == state.best_branch_overall,
+            "total_evals": state.total_evals,
+        }
 
     # ------------------------------------------------------------------ select
     if phase == _PHASE_SELECT:
@@ -805,11 +849,12 @@ def evo_step(phase: str, branch: str = "", parent_commit: str = "",
         return _begin_generation_impl(state)
 
     return {"error": f"Unknown phase: {phase!r}. Valid phases: "
-            f"{_PHASE_BEGIN}, {_PHASE_CODE}, {_PHASE_FITNESS}, {_PHASE_SELECT}, {_PHASE_REFLECT}"}
+            f"{_PHASE_BEGIN}, {_PHASE_CODE}, {_PHASE_POLICY_PASS}, {_PHASE_POLICY_FAIL}, "
+            f"{_PHASE_FITNESS}, {_PHASE_SELECT}, {_PHASE_REFLECT}"}
 
 
 def _begin_generation_impl(state: EvolutionState) -> dict:
-    """Plan and store the next generation batch; return first generate_code action."""
+    """Plan and store the next generation batch; return all items for parallel dispatch."""
     budget_remaining = state.config.max_fe - state.total_evals
     if budget_remaining <= 0:
         return {"action": _PHASE_DONE, "reason": "budget exhausted",
@@ -874,38 +919,18 @@ def _begin_generation_impl(state: EvolutionState) -> dict:
                                        target_function=target.function))
 
     state.current_batch = batch
-    state.batch_cursor = 0
+    state.batch_cursor = 0  # kept for compat; parallel flow ignores this
     _save()
 
     if not batch:
         return {"action": _PHASE_DONE, "reason": "empty batch",
                 "total_evals": state.total_evals}
 
-    first = batch[0]
     return {
-        "action": "generate_code",
+        "action": "dispatch_workers",
         "generation": state.generation,
         "batch_size": len(batch),
-        "cursor": 0,
-        "item": first.model_dump(),
-    }
-
-
-def _next_item_or_select(state: EvolutionState) -> dict:
-    """Return next generate_code action or trigger select if batch is done."""
-    if state.batch_cursor < len(state.current_batch):
-        item = state.current_batch[state.batch_cursor]
-        return {
-            "action": "generate_code",
-            "generation": state.generation,
-            "cursor": state.batch_cursor,
-            "batch_size": len(state.current_batch),
-            "item": item.model_dump(),
-        }
-    return {
-        "action": "select",
-        "generation": state.generation,
-        "items_evaluated": len(state.current_batch),
+        "items": [item.model_dump() for item in batch],
     }
 
 

@@ -17,6 +17,7 @@ const os = require('os');
 const PKG_ROOT = path.resolve(__dirname, '..');
 const SKILLS_DIR = path.join(PKG_ROOT, 'plugin', 'skills');
 const AGENTS_MD = path.join(PKG_ROOT, 'plugin', 'AGENTS.md');
+const AGENTS_DIR = path.join(PKG_ROOT, 'plugin', 'agents');
 
 const MCP_SERVER_ENTRY = {
   command: 'evo-engine',
@@ -84,6 +85,17 @@ function setupCursor(projectDir) {
   fs.mkdirSync(rulesDir, { recursive: true });
   fs.copyFileSync(AGENTS_MD, path.join(rulesDir, 'evo-agents.md'));
   console.log(`  ✅ Copied AGENTS.md → .cursor/rules/evo-agents.md`);
+
+  // 复制 agent 定义文件
+  if (fs.existsSync(AGENTS_DIR)) {
+    for (const agentFile of fs.readdirSync(AGENTS_DIR)) {
+      fs.copyFileSync(
+        path.join(AGENTS_DIR, agentFile),
+        path.join(rulesDir, `evo-${agentFile}`)
+      );
+      console.log(`  ✅ Copied agents/${agentFile} → .cursor/rules/evo-${agentFile}`);
+    }
+  }
 }
 
 function setupWindsurf() {

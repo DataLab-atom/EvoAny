@@ -20,23 +20,25 @@ User provides: repo path, benchmark command, objective (min/max), and optionally
    - Call `evo_report_seed` with baseline fitness
    - `exec git -C <repo> tag seed-baseline`
 
-3. Analyze code (MapAgent role):
-   - Read the benchmark entry file
-   - Trace call chain to find optimization targets
-   - Call `evo_register_targets` with identified targets
+3. Analyze code (MapAgent):
+   - Spawn MapAgent to read benchmark entry file, trace call chain, identify targets
+   - MapAgent calls `evo_register_targets` with identified targets
 
 4. Create memory structure:
    - `exec mkdir -p <repo>/memory/global`
    - For each target: `exec mkdir -p <repo>/memory/targets/<id>/short_term`
 
-5. Enter evolution loop using `evo_step` — follow the Core Loop in AGENTS.md:
-   - Start with `evo_step("begin_generation")`
-   - Each call returns `{action, ...data}`; execute the action, then call `evo_step` again
-   - **Policy check is automatic**: calling `evo_step("code_ready", branch=..., parent_commit=...)`
-     triggers a server-side git diff; the server returns `action="run_benchmark"` (pass)
-     or the next `generate_code`/`select` action with `policy_violation` set (violation,
-     already recorded — no benchmark needed)
-   - Stop when `action == "done"` or when you judge the results are sufficient
+5. Enter evolution loop — follow the Core Loop in AGENTS.md:
+   - OrchestratorAgent calls `evo_step("begin_generation")`
+     → returns `{action: "dispatch_workers", items: [...]}`
+   - Spawn one WorkerAgent per item, in parallel
+   - Each WorkerAgent: generates code → requests policy check → PolicyAgent
+     reviews diff → if approved, runs benchmark → reports fitness
+   - When all workers return, OrchestratorAgent calls `evo_step("select")`
+   - Clean up eliminated branches, tag best
+   - Spawn ReflectAgent to write memory
+   - Call `evo_step("reflect_done")` to start next generation or finish
+   - Stop when `action == "done"` or results are sufficient
 
 6. Report progress to user after each generation.
 

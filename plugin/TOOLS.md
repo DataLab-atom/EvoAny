@@ -1,32 +1,43 @@
 # Tool Usage Conventions
 
-## evo-engine MCP tools
+## By Agent
 
-All deterministic evolution bookkeeping goes through the `evo_*` MCP tools.
-Never manually track population state — always call the tool.
-
-- `evo_init` — call once at the start to initialize evolution state
-- `evo_register_targets` — register optimization targets identified by code analysis
-- `evo_next_batch` — get the next set of branch operations to execute
-- `evo_report_fitness` — report benchmark results back after evaluation
-- `evo_select_survivors` — run selection algorithm, get keep/eliminate lists
+### OrchestratorAgent
+- `evo_step` — advance the evolution state machine (`begin_generation`, `select`, `reflect_done`)
 - `evo_get_status` — check current evolution progress
 - `evo_get_lineage` — trace how a branch evolved
 - `evo_freeze_target` / `evo_boost_target` — manual priority control
+- `exec git branch -D` / `exec git tag` — branch cleanup and tagging
 
-## Git operations
+### MapAgent
+- `read` — read source files and benchmark scripts
+- `exec` — run static analysis, grep call chains
+- `evo_register_targets` — register identified optimization targets
 
-Use `exec` to run git commands directly. Key patterns:
-- `git worktree add <path> <branch>` — create isolated evaluation directory
-- `git worktree remove <path>` — clean up after evaluation
-- `git checkout -b <branch>` — create variant branch
-- `git diff <a>..<b>` — compare two variants (feed to reflection)
-- `git cherry-pick` — combine best parts from different branches
+### WorkerAgent
+- `read` / `edit` / `write` — read target code, generate variants
+- `exec git checkout -b` — create variant branches
+- `exec git worktree add/remove` — isolated evaluation directories
+- `exec` — run benchmark command, capture stdout/stderr
+- `evo_step` — report code (`code_ready`), report fitness (`fitness_ready`)
+- `evo_check_cache` — skip duplicate code evaluations
 
-## Code operations
+### PolicyAgent
+- `evo_step` — report policy decision (`policy_pass`, `policy_fail`)
+- No other tools needed — all input comes from the `check_policy` response
 
-Use `read` / `edit` / `write` for code changes. Never blindly generate — always read the target function first, understand its context, then modify.
+### ReflectAgent
+- `read` / `write` — memory file I/O (short_term, long_term, failures)
+- `exec git diff` — compare best vs second-best variants
+- `exec git cherry-pick` — combine branches for synergy checks
+- `evo_record_synergy` — record synergy experiment results
+- `evo_get_lineage` — trace branch ancestry for context
 
-## Benchmark
+## General Rules
 
-Use `exec` to run the user's benchmark command inside a worktree. Always capture both stdout and stderr.
+- All deterministic evolution bookkeeping goes through `evo_*` MCP tools.
+  Never manually track population state.
+- Use `exec` for git commands and benchmark execution.
+- Use `read` / `edit` / `write` for code changes. Never blindly generate —
+  always read the target function first.
+- Always capture both stdout and stderr when running benchmarks.
