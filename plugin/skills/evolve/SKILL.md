@@ -29,8 +29,14 @@ User provides: repo path, benchmark command, objective (min/max), and optionally
    - `exec mkdir -p <repo>/memory/global`
    - For each target: `exec mkdir -p <repo>/memory/targets/<id>/short_term`
 
-5. Enter evolution loop — follow the protocol in AGENTS.md:
-   - Call `evo_next_batch` → execute each operation → `evo_report_fitness` → `evo_select_survivors` → reflect → repeat
+5. Enter evolution loop using `evo_step` — follow the Core Loop in AGENTS.md:
+   - Start with `evo_step("begin_generation")`
+   - Each call returns `{action, ...data}`; execute the action, then call `evo_step` again
+   - **Policy check is automatic**: calling `evo_step("code_ready", branch=..., parent_commit=...)`
+     triggers a server-side git diff; the server returns `action="run_benchmark"` (pass)
+     or the next `generate_code`/`select` action with `policy_violation` set (violation,
+     already recorded — no benchmark needed)
+   - Stop when `action == "done"` or when you judge the results are sufficient
 
 6. Report progress to user after each generation.
 

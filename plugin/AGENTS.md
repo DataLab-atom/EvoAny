@@ -14,36 +14,65 @@ You evolve code in a target git repository by running generations of:
 
 ## Core Loop
 
-```
-Call evo_init → set up evolution state
-Call evo_register_targets → define what to optimize
+The loop is driven by `evo_step`.  Each call returns `{action, ...data}`.
+You execute `action`, then call `evo_step` again with the result.
+**You decide whether to stop** — check `action == "done"` or user intent.
 
-WHILE evo_get_status shows budget remaining:
-  1. Call evo_next_batch → get [{branch, op, target, parents}]
-  2. For each operation:
-     a. git checkout -b <branch> from parent
-     b. Read target function code
-     c. Read memory/ for this target (long_term + failures)
-     d. Generate variant (mutate or crossover via LLM)
-     e. Write code change, git commit
-  3. For each branch to evaluate:
-     a. git worktree add <path> <branch>
-     b. Run benchmark command in worktree
-     c. Parse fitness from output
-     d. Call evo_report_fitness with result
-     e. git worktree remove <path>
-  4. Call evo_select_survivors → get keep/eliminate lists
-  5. Delete eliminated branches
-  6. Tag best: git tag best-gen-{N}
-  7. Reflect:
-     a. git diff best..second_best → short-term reflection
-     b. Write to memory/targets/{id}/short_term/gen_{N}.md
-     c. Synthesize long_term.md from accumulated short_term
-     d. Record failures to memory/targets/{id}/failures.md
-  8. Every 3 generations: synergy check
-     a. Cherry-pick best of each target into one branch
-     b. Evaluate combined fitness
-     c. Record synergy results
+```
+Call evo_init            → set up evolution state
+Call evo_register_targets → define what to optimize
+step = evo_step("begin_generation")
+
+LOOP:
+  if step.action == "done":
+      break                          ← you decide to stop here
+
+  if step.action == "generate_code":
+      item = step.item
+      # if step.policy_violation is set, a previous branch was rejected (informational)
+      a. git checkout -b item.branch  from item.parent_branches[0]
+      b. record parent_commit = git rev-parse item.parent_branches[0]
+      c. Read target function code
+      d. Read memory/ for this target (long_term + failures)
+      e. Generate variant (mutate or crossover via LLM)
+      f. Write code change, git commit
+      step = evo_step("code_ready",
+                      branch=item.branch,
+                      parent_commit=parent_commit)
+      # server runs policy check here — returns "run_benchmark" or next "generate_code"/"select"
+
+  elif step.action == "run_benchmark":
+      # policy check passed — step contains branch, target_id, operation, parent_branches
+      a. git worktree add <path> step.branch
+      b. Run benchmark command in worktree
+      c. Parse fitness from output
+      d. git worktree remove <path>
+      step = evo_step("fitness_ready",
+                      branch=step.branch,
+                      fitness=<value>, success=<bool>,
+                      operation=step.operation,
+                      target_id=step.target_id,
+                      parent_branches=step.parent_branches)
+      # server returns next "generate_code" or "select"
+
+  elif step.action == "select":
+      step = evo_step("select")
+      # returns {action="reflect", keep=[...], eliminate=[...], best_branch, best_obj}
+      a. Delete eliminated branches
+      b. Tag best: git tag best-gen-{N}
+
+  elif step.action == "reflect":
+      # step contains keep/eliminate/best_branch from selection
+      a. git diff best..second_best → short-term reflection
+      b. Write to memory/targets/{id}/short_term/gen_{N}.md
+      c. Synthesize long_term.md from accumulated short_term
+      d. Record failures to memory/targets/{id}/failures.md
+      e. Every 3 generations: synergy check
+         - Cherry-pick best of each target into one branch
+         - Evaluate combined fitness  (use evo_step "code_ready"→"fitness_ready")
+         - Record synergy results via evo_record_synergy
+      step = evo_step("reflect_done")
+      # server starts next generation internally → action="generate_code" or "done"
 ```
 
 ## Memory Layout
@@ -71,14 +100,26 @@ Tags: `seed-baseline`, `best-gen-{N}`, `best-overall`
 
 ## Evaluation Protocol
 
-1. **Static check** — read generated code, fix obvious issues (missing imports, syntax errors). Do NOT fix algorithm logic.
-2. **Quick eval** — if quick_cmd is configured, run it first to filter obvious failures.
-3. **Full eval** — run full benchmark only on candidates that pass quick eval.
+Policy enforcement is **server-side** inside `evo_step("code_ready", ...)`.
+You do not need to run a separate policy check — the server does it automatically
+when you report that code is ready.
+
+1. **Policy check** — automatic, runs inside `evo_step("code_ready")`.
+   Server diffs `parent_commit..branch`, checks against `protected_patterns`
+   and declared target files.
+   - Pass → returns `action="run_benchmark"`
+   - Violation → records it, skips to next item, returns `action="generate_code"`
+     (or `action="select"` if batch is done) with `policy_violation={branch, reason}`
+2. **Static check** — before committing: fix obvious issues (missing imports,
+   syntax errors). Do NOT fix algorithm logic.
+3. **Quick eval** — if quick_cmd is configured, run it first to filter failures.
+4. **Full eval** — run full benchmark only on candidates that pass quick eval.
 
 If a variant crashes:
 - Read the traceback
-- If it's a trivial fix (missing import, typo, type mismatch): fix it, re-commit, re-evaluate
-- If it's an algorithm logic error: mark as failed, record in failures.md
+- If it's a trivial fix (missing import, typo, type mismatch): fix it, re-commit,
+  then call `evo_step("code_ready", ...)` again with the new commit
+- If it's an algorithm logic error: report via `evo_step("fitness_ready", success=False)`
 
 ## Constraints
 

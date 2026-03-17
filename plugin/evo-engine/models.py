@@ -67,7 +67,7 @@ class SurvivorResult(BaseModel):
     keep: list[str]
     eliminate: list[str]
     best_branch: str
-    best_obj: float
+    best_obj: Optional[float] = None
 
 
 class EvolutionConfig(BaseModel):
@@ -81,6 +81,11 @@ class EvolutionConfig(BaseModel):
     synergy_interval: int = 3
     top_k_survive: int = 5
     quick_cmd: Optional[str] = None
+    # Glob patterns for files that must never be modified by evolution
+    protected_patterns: list[str] = Field(default_factory=lambda: [
+        "benchmark*.py", "eval*.py", "evaluate*.py",
+        "run_eval*", "test_bench*", "*.sh",
+    ])
 
 
 class EvolutionState(BaseModel):
@@ -101,3 +106,6 @@ class EvolutionState(BaseModel):
     fitness_cache: dict[str, float] = Field(default_factory=dict)
     # Synergy records
     synergy_records: list[dict] = Field(default_factory=list)
+    # Current generation batch (stored server-side so LLM just passes a cursor)
+    current_batch: list[BatchItem] = Field(default_factory=list)
+    batch_cursor: int = 0  # index of the next unprocessed item in current_batch

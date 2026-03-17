@@ -9,9 +9,11 @@ The agent calls these tools; the LLM handles code generation and reflection.
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import os
+import subprocess
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -593,6 +595,318 @@ def evo_check_cache(code_hash: str) -> dict:
     if code_hash in state.fitness_cache:
         return {"cached": True, "fitness": state.fitness_cache[code_hash]}
     return {"cached": False}
+
+
+# ---------------------------------------------------------------------------
+# evo_step — stateless loop driver
+# ---------------------------------------------------------------------------
+
+# Phase constants (passed as strings so they are readable in LLM output)
+_PHASE_BEGIN   = "begin_generation"   # start a new generation
+_PHASE_CODE    = "code_ready"         # LLM committed code for a branch
+_PHASE_FITNESS = "fitness_ready"      # LLM ran benchmark, has fitness value
+_PHASE_SELECT  = "select"             # all items evaluated, run selection
+_PHASE_REFLECT = "reflect_done"       # LLM finished writing memory
+_PHASE_DONE    = "done"               # budget exhausted
+
+
+def _policy_check(repo_path: str, branch: str, parent: str,
+                  protected_patterns: list[str],
+                  allowed_files: set[str]) -> tuple[bool, str]:
+    """Run git diff and check for policy violations.
+
+    Returns (approved: bool, reason: str).
+    """
+    result = subprocess.run(
+        ["git", "-C", repo_path, "diff", "--name-only", f"{parent}..{branch}"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return False, f"git diff failed: {result.stderr.strip()}"
+
+    changed = [f for f in result.stdout.strip().splitlines() if f]
+    for f in changed:
+        basename = os.path.basename(f)
+        for pat in protected_patterns:
+            if fnmatch.fnmatch(f, pat) or fnmatch.fnmatch(basename, pat):
+                return False, f"Protected file modified: {f!r} (pattern {pat!r})"
+        if allowed_files and f not in allowed_files:
+            return False, f"File outside optimization targets: {f!r}"
+    return True, ""
+
+
+@mcp.tool()
+def evo_step(phase: str, branch: str = "", parent_commit: str = "",
+             fitness: float = 0.0, success: bool = True,
+             operation: str = "", target_id: str = "",
+             parent_branches: list[str] | None = None,
+             code_hash: str = "", raw_output: str = "") -> dict:
+    """Stateless evolution loop driver.
+
+    Call this in a loop; each call returns the next action to perform.
+    The LLM decides whether to continue (stop when action=="done").
+
+    Phases and what to pass:
+      "begin_generation"  — start (or resume) a generation; no extra args needed.
+      "code_ready"        — you committed code for `branch` (parent at
+                            `parent_commit`). Server runs policy check and
+                            returns action="run_benchmark" on pass, or the next
+                            action (generate_code / select) with policy_violation
+                            set if the branch was rejected.
+      "fitness_ready"     — you ran the benchmark; pass fitness / success /
+                            operation / target_id / parent_branches.
+                            Returns next generate_code or action="select".
+      "select"            — trigger survivor selection. Returns action="reflect"
+                            with keep/eliminate lists.
+      "reflect_done"      — you finished writing memory. Server starts next
+                            generation and returns generate_code or action="done".
+    """
+    state = _get_state()
+    pb = parent_branches or []
+
+    # ------------------------------------------------------------------ begin
+    if phase == _PHASE_BEGIN:
+        return _begin_generation_impl(state)
+
+    # ------------------------------------------------------------------ code_ready
+    if phase == _PHASE_CODE:
+        if not branch:
+            return {"error": "branch is required for phase 'code_ready'"}
+
+        # Find the batch item to get allowed files
+        item = next((it for it in state.current_batch if it.branch == branch), None)
+        allowed: set[str] = set()
+        if item and item.target_file:
+            allowed = {item.target_file}
+
+        # Resolve parent: prefer explicit parent_commit, fall back to parent_branches[0]
+        parent = parent_commit
+        if not parent and item and item.parent_branches:
+            r = subprocess.run(
+                ["git", "-C", state.config.repo_path, "rev-parse", item.parent_branches[0]],
+                capture_output=True, text=True,
+            )
+            parent = r.stdout.strip() if r.returncode == 0 else item.parent_branches[0]
+        if not parent:
+            return {"error": "Cannot determine parent commit for policy check. "
+                             "Pass parent_commit= explicitly."}
+
+        approved, reason = _policy_check(
+            repo_path=state.config.repo_path,
+            branch=branch,
+            parent=parent,
+            protected_patterns=state.config.protected_patterns,
+            allowed_files=allowed,
+        )
+
+        if not approved:
+            ind = Individual(
+                branch=branch,
+                generation=state.generation,
+                target_id=item.target_id if item else "",
+                operation=item.operation if item else Operation.MUTATE,
+                parent_branches=item.parent_branches if item else [],
+                fitness=None,
+                success=False,
+                raw_output=f"policy_violation: {reason}",
+            )
+            state.individuals[branch] = ind
+            state.batch_cursor += 1
+            _save()
+            next_step = _next_item_or_select(state)
+            next_step["policy_violation"] = {"branch": branch, "reason": reason}
+            return next_step
+
+        return {
+            "action": "run_benchmark",
+            "branch": branch,
+            "target_id": item.target_id if item else "",
+            "operation": item.operation.value if item else "",
+            "parent_branches": item.parent_branches if item else [],
+        }
+
+    # ------------------------------------------------------------------ fitness_ready
+    if phase == _PHASE_FITNESS:
+        # Cache check: skip recording if this code was already evaluated
+        if code_hash and code_hash in state.fitness_cache:
+            cached = state.fitness_cache[code_hash]
+            state.batch_cursor += 1
+            _save()
+            next_step = _next_item_or_select(state)
+            next_step["cached"] = True
+            next_step["cached_fitness"] = cached
+            return next_step
+
+        is_min = state.config.objective == Objective.MIN
+        ind = Individual(
+            branch=branch,
+            generation=state.generation,
+            target_id=target_id,
+            operation=Operation(operation) if operation else Operation.MUTATE,
+            parent_branches=pb,
+            fitness=fitness,
+            success=success,
+            code_hash=code_hash,
+            raw_output=raw_output[:500] if raw_output else None,
+        )
+        state.individuals[branch] = ind
+        state.total_evals += 1
+
+        if code_hash:
+            state.fitness_cache[code_hash] = fitness
+
+        if target_id not in state.active_branches:
+            state.active_branches[target_id] = []
+        if success:
+            state.active_branches[target_id].append(branch)
+
+        if success and target_id in state.targets:
+            target = state.targets[target_id]
+            improved = (
+                target.current_best_obj is None
+                or (is_min and fitness < target.current_best_obj)
+                or (not is_min and fitness > target.current_best_obj)
+            )
+            if improved:
+                target.current_best_obj = fitness
+                target.current_best_branch = branch
+                target.stagnation_count = 0
+
+        if success:
+            if state.best_obj_overall is None:
+                state.best_obj_overall = fitness
+                state.best_branch_overall = branch
+            elif is_min and fitness < state.best_obj_overall:
+                state.best_obj_overall = fitness
+                state.best_branch_overall = branch
+            elif not is_min and fitness > state.best_obj_overall:
+                state.best_obj_overall = fitness
+                state.best_branch_overall = branch
+
+        state.batch_cursor += 1
+        _save()
+        result = _next_item_or_select(state)
+        result["recorded_fitness"] = fitness
+        result["is_new_best"] = branch == state.best_branch_overall
+        return result
+
+    # ------------------------------------------------------------------ select
+    if phase == _PHASE_SELECT:
+        result = evo_select_survivors()
+        result["action"] = "reflect"
+        return result
+
+    # ------------------------------------------------------------------ reflect_done
+    if phase == _PHASE_REFLECT:
+        budget_remaining = state.config.max_fe - state.total_evals
+        if budget_remaining <= 0:
+            return {"action": _PHASE_DONE, "reason": "budget exhausted",
+                    "total_evals": state.total_evals, "best_obj": state.best_obj_overall}
+        return _begin_generation_impl(state)
+
+    return {"error": f"Unknown phase: {phase!r}. Valid phases: "
+            f"{_PHASE_BEGIN}, {_PHASE_CODE}, {_PHASE_FITNESS}, {_PHASE_SELECT}, {_PHASE_REFLECT}"}
+
+
+def _begin_generation_impl(state: EvolutionState) -> dict:
+    """Plan and store the next generation batch; return first generate_code action."""
+    budget_remaining = state.config.max_fe - state.total_evals
+    if budget_remaining <= 0:
+        return {"action": _PHASE_DONE, "reason": "budget exhausted",
+                "total_evals": state.total_evals}
+
+    is_min = state.config.objective == Objective.MIN
+    plan = plan_generation(
+        targets=state.targets,
+        pop_size=state.config.pop_size,
+        mutation_rate=state.config.mutation_rate,
+        budget_remaining=budget_remaining,
+        synergy_interval=state.config.synergy_interval,
+        generation=state.generation,
+        is_minimize=is_min,
+    )
+
+    batch: list[BatchItem] = []
+    var_counter: dict[str, int] = {}
+    for item in plan:
+        tid = item["target_id"]
+        op = item["operation"]
+        count = item["count"]
+        for _ in range(count):
+            key = f"{tid}/{op.value}"
+            idx = var_counter.get(key, 0)
+            var_counter[key] = idx + 1
+            if op == Operation.SYNERGY:
+                b = f"gen-{state.generation}/synergy/{tid}-{idx}"
+                parts = tid.split("+")
+                parents_list = [
+                    state.targets[p].current_best_branch
+                    for p in parts
+                    if p in state.targets and state.targets[p].current_best_branch
+                ]
+                batch.append(BatchItem(branch=b, operation=op, target_id=tid,
+                                       parent_branches=parents_list,
+                                       target_file="", target_function=""))
+            else:
+                target = state.targets[tid]
+                b = f"gen-{state.generation}/{tid}/{op.value}-{idx}"
+                if op == Operation.CROSSOVER:
+                    active = state.active_branches.get(tid, [])
+                    active_inds = [
+                        state.individuals[br] for br in active
+                        if br in state.individuals and state.individuals[br].success
+                    ]
+                    pairs = random_select(active_inds, 1, is_minimize=is_min)
+                    if pairs:
+                        parents_list = [pairs[0][0].branch, pairs[0][1].branch]
+                    elif target.current_best_branch:
+                        parents_list = [target.current_best_branch]
+                    else:
+                        parents_list = [state.seed_branch]
+                else:
+                    parents_list = (
+                        [target.current_best_branch] if target.current_best_branch
+                        else [state.seed_branch]
+                    )
+                batch.append(BatchItem(branch=b, operation=op, target_id=tid,
+                                       parent_branches=parents_list,
+                                       target_file=target.file,
+                                       target_function=target.function))
+
+    state.current_batch = batch
+    state.batch_cursor = 0
+    _save()
+
+    if not batch:
+        return {"action": _PHASE_DONE, "reason": "empty batch",
+                "total_evals": state.total_evals}
+
+    first = batch[0]
+    return {
+        "action": "generate_code",
+        "generation": state.generation,
+        "batch_size": len(batch),
+        "cursor": 0,
+        "item": first.model_dump(),
+    }
+
+
+def _next_item_or_select(state: EvolutionState) -> dict:
+    """Return next generate_code action or trigger select if batch is done."""
+    if state.batch_cursor < len(state.current_batch):
+        item = state.current_batch[state.batch_cursor]
+        return {
+            "action": "generate_code",
+            "generation": state.generation,
+            "cursor": state.batch_cursor,
+            "batch_size": len(state.current_batch),
+            "item": item.model_dump(),
+        }
+    return {
+        "action": "select",
+        "generation": state.generation,
+        "items_evaluated": len(state.current_batch),
+    }
 
 
 # ---------------------------------------------------------------------------
