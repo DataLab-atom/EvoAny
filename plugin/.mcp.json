@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "evo-engine": {
+      "command": "evo-engine",
+      "type": "stdio",
+      "args": []
+    }
+  }
+}

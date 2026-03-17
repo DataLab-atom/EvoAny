@@ -1,0 +1,15 @@
+{
+  "name": "evo-anything",
+  "version": "0.1.0",
+  "description": "Git-based evolutionary code optimization engine. Evolves code via LLM-driven mutation, crossover, and reflection on any git repository.",
+  "author": {
+    "name": "DataLab-atom",
+    "url": "https://github.com/DataLab-atom/Evo-anything"
+  },
+  "repository": "https://github.com/DataLab-atom/Evo-anything",
+  "license": "MIT",
+  "keywords": ["evolutionary-algorithm", "llm", "code-optimization", "mcp"],
+  "skills": "./skills/",
+  "agents": "./agents/",
+  "mcpServers": "./.mcp.json"
+}

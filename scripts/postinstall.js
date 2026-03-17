@@ -44,7 +44,8 @@ try {
   console.log('\n✅ evo-engine installed successfully.\n');
   console.log('Next steps:');
   console.log('  npx evo-anything setup    — 自动配置 Claude Code / Cursor / Windsurf');
-  console.log('  npx evo-anything setup --platform openclaw  — 仅配置 OpenClaw\n');
+  console.log('  npx evo-anything setup --platform openclaw  — 仅配置 OpenClaw');
+  console.log('  Claude Code skills: /evo-anything:status, /evo-anything:evolve, /evo-anything:hunt\n');
 } catch (err) {
   console.error('\n❌ pip install failed:', err.message);
   console.error(`   Please run manually: pip install "${EVO_ENGINE_DIR}"\n`);
