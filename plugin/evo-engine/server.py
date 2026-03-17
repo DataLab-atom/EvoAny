@@ -35,7 +35,7 @@ from selection import (
     update_temperatures,
 )
 
-mcp = FastMCP("evo-engine", description="U2E evolutionary algorithm bookkeeping")
+mcp = FastMCP("evo-engine", instructions="U2E evolutionary algorithm bookkeeping")
 
 # ---------------------------------------------------------------------------
 # State persistence
