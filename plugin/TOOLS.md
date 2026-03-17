@@ -8,17 +8,23 @@
 - `evo_get_lineage` — trace how a branch evolved
 - `evo_freeze_target` / `evo_boost_target` — manual priority control
 - `exec git branch -D` / `exec git tag` — branch cleanup and tagging
+- `write` + `canvas` — live fitness dashboard (built-in, updated after each generation)
 
 ### MapAgent
 - `read` — read source files and benchmark scripts
-- `exec` — run static analysis, grep call chains
+- `exec` — run static analysis, grep call chains, profiling
+- `/oracle` — *(optional)* whole-repo context analysis; preferred when oracle binary is available
 - `evo_register_targets` — register identified optimization targets
 
 ### WorkerAgent
-- `read` / `edit` / `write` — read target code, generate variants
+- `read` / `edit` / `write` — code generation (simple mutations)
+- `/coding-agent` — *(optional)* complex mutations and crossover; preferred when `claude` or `codex` is available
+- `exec python -m py_compile` — static syntax check before every commit
+- `exec pyflakes` — *(optional)* import/name check before commit
 - `exec git checkout -b` — create variant branches
 - `exec git worktree add/remove` — isolated evaluation directories
-- `exec` — run benchmark command, capture stdout/stderr
+- `exec` — short benchmark execution (<30s)
+- `tmux` — *(optional)* long benchmark execution (non-blocking); used when benchmark is expected to take >30s
 - `evo_step` — report code (`code_ready`), report fitness (`fitness_ready`)
 - `evo_check_cache` — skip duplicate code evaluations
 
@@ -30,6 +36,7 @@
 - `read` / `write` — memory file I/O (short_term, long_term, failures)
 - `exec git diff` — compare best vs second-best variants
 - `exec git cherry-pick` — combine branches for synergy checks
+- `/session-logs` — *(optional)* cross-run meta-learning; queried on first generation only
 - `evo_record_synergy` — record synergy experiment results
 - `evo_get_lineage` — trace branch ancestry for context
 
@@ -40,4 +47,7 @@
 - Use `exec` for git commands and benchmark execution.
 - Use `read` / `edit` / `write` for code changes. Never blindly generate —
   always read the target function first.
+- Always run `python -m py_compile` on the target file before committing.
 - Always capture both stdout and stderr when running benchmarks.
+- Optional tools (marked with *optional*) degrade gracefully: if the required
+  binary or skill is unavailable, fall back to the next simpler method.

@@ -8,9 +8,19 @@ Evo-anything is the engineering implementation of **"From Understanding to Excel
 
 ### Prerequisites
 
+**Required:**
 - Python >= 3.11
 - Git
-- GitHub CLI (`gh`) — required for `/hunt` to search repositories
+- GitHub CLI (`gh`) — required for `/hunt` to search repositories and open PRs
+
+**Optional (automatically enabled when installed):**
+- `oracle` CLI — MapAgent whole-repo context analysis (`npm install -g oracle`)
+- `claude` CLI — WorkerAgent complex variant generation using Claude Code instead of direct edits
+- `codex` CLI — alternative for WorkerAgent complex variant generation
+- `lobster` CLI — atomic setup workflows + PR approval gate
+- `tmux` — non-blocking background execution for long benchmarks
+- `pyflakes` — static import/name checks before committing variants (`pip install pyflakes`)
+- OpenClaw skills: `oracle`, `arxiv-watcher`, `summarize`, `session-logs` (install via `clawhub install <slug>`)
 
 ### Option 1: npm (recommended)
 
@@ -275,28 +285,36 @@ Evo-anything/
 ├── LICENSE
 ├── README.md
 ├── README_EN.md
+├── research/                  # ecosystem research docs
+│   ├── 01_openclaw_existing_capabilities.md
+│   ├── 02_compatible_products_capabilities.md
+│   ├── 03_evo_anything_analysis.md
+│   └── 04_ecosystem_capability_map.md  # full ecosystem capability map
 └── plugin/
     ├── openclaw.plugin.json   # plugin definition
     ├── AGENTS.md              # evolution protocol (core loop)
     ├── SOUL.md                # agent persona
     ├── TOOLS.md               # tool usage conventions
     ├── agents/                # per-agent behavior specs
-    │   ├── orchestrator.md    # OrchestratorAgent
-    │   ├── worker.md          # WorkerAgent
+    │   ├── orchestrator.md    # OrchestratorAgent (with canvas dashboard)
+    │   ├── worker.md          # WorkerAgent (with static checks, tmux, coding-agent)
     │   ├── policy_agent.md    # PolicyAgent
-    │   ├── reflect_agent.md   # ReflectAgent
-    │   └── map_agent.md       # MapAgent
+    │   ├── reflect_agent.md   # ReflectAgent (with cross-run meta-learning)
+    │   └── map_agent.md       # MapAgent (with oracle whole-repo analysis)
     ├── evo-engine/            # evolution engine (MCP server)
     │   ├── server.py          # MCP tool interface
     │   ├── models.py          # data models
     │   └── selection.py       # selection algorithms
-    └── skills/                # user-invocable skills
-        ├── hunt/              # search and deploy a codebase
-        ├── evolve/            # start evolution loop
-        ├── status/            # check progress
-        ├── report/            # generate report
-        ├── boost/             # boost target priority
-        └── freeze/            # freeze a target
+    ├── skills/                # user-invocable skills
+    │   ├── hunt/              # search and deploy a codebase (with arxiv-watcher)
+    │   ├── evolve/            # start evolution loop (with lobster workflows)
+    │   ├── status/            # check progress
+    │   ├── report/            # generate report
+    │   ├── boost/             # boost target priority
+    │   └── freeze/            # freeze a target
+    └── workflows/             # Lobster declarative workflows
+        ├── evo-setup.lobster  # atomic setup (validate→baseline→tag→mkdir)
+        └── evo-finish.lobster # finish flow (tag→push→approval gate→PR)
 ```
 
 ## Evolution Memory

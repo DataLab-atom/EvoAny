@@ -25,13 +25,73 @@ git checkout -b {item.branch} {item.parent_branches[0]}
 parent_commit = git rev-parse {item.parent_branches[0]}
 ```
 
+Read context:
 - Read the target function code from `item.target_file`
 - Read `memory/targets/{item.target_id}/long_term.md` for accumulated wisdom
 - Read `memory/targets/{item.target_id}/failures.md` to avoid known bad paths
 - If `operation == "crossover"`: also read code from `parent_branches[1]`
-- Generate the variant, keeping the function signature unchanged
-- Fix obvious issues (missing imports, syntax errors)
-- `git add` + `git commit`
+
+**Choose generation method based on operation complexity:**
+
+#### Simple mutate (default)
+
+For localized changes (loss function tweak, hyperparameter, single algorithm swap):
+- Generate variant directly using `edit`/`write`
+- Keep function signature unchanged
+
+#### Complex mutate or crossover (use `coding-agent` when available)
+
+For structural changes, crossover between significantly different branches,
+or when the target function has complex dependencies:
+
+**If `claude` CLI is available** (preferred):
+```
+cd <repo>
+claude --permission-mode bypassPermissions --print \
+  "Rewrite `{item.target_function}` in `{item.target_file}`.
+   Operation: {item.operation}.
+   {if crossover: 'Merge best ideas from both parents:' + diff of both}
+   Constraints:
+   - Keep function signature EXACTLY unchanged: {signature}
+   - Only modify the function body, no other files
+   - Apply lessons: {long_term.md summary}
+   - Avoid: {failures.md summary}"
+```
+
+**If `codex` CLI is available** (alternative):
+```
+bash pty:true workdir:<repo> command:"codex exec --full-auto '{instruction}'"
+```
+
+After coding-agent completes, verify only `item.target_file` was changed and signature is intact.
+
+### 1b. Static validation — before committing
+
+**Always run this after generating the variant, regardless of method:**
+
+```bash
+# Syntax check — zero overhead, catches crashes immediately
+python -m py_compile {item.target_file}
+```
+
+If syntax check fails:
+- If error is trivial (missing colon, unmatched paren, wrong indent): fix it inline and re-check
+- If error is structural (logic changed the function shape): regenerate from scratch
+
+```bash
+# Import / name check — catches undefined vars, bad imports
+pyflakes {item.target_file}   # if pyflakes installed
+# or: python -c "import ast; ast.parse(open('{item.target_file}').read())"
+```
+
+Flag any new `NameError` or `ImportError` risks introduced by the variant.
+
+**Only commit after static validation passes.** This prevents wasting a benchmark slot on code that would crash in the first line.
+
+```
+git add {item.target_file}
+git commit -m "gen-{N}/{target_id}/{operation}: {one-line description of change}"
+```
 
 ### 2. Policy Check — request review
 
@@ -47,28 +107,63 @@ Hand the `step` to **PolicyAgent** for review.
 - If PolicyAgent approves:
   ```
   step = evo_step("policy_pass", branch=item.branch)
-  # Returns: {action: "run_benchmark", ...}
   ```
 
 - If PolicyAgent rejects:
   ```
-  step = evo_step("policy_fail", branch=item.branch, reason="...")
-  # Returns: {action: "worker_done", rejected=True}
+  evo_step("policy_fail", branch=item.branch, reason="...")
   ```
-  Exit early — do not benchmark.
+  Exit early.
 
 ### 3. Benchmark — evaluate the variant
 
 ```
 git worktree add /tmp/eval-{branch} {step.branch}
-cd /tmp/eval-{branch}
-exec {benchmark_cmd}         # capture stdout + stderr
-fitness = parse last line as float
+```
+
+**Choose execution mode based on expected benchmark duration:**
+
+#### Short benchmark (<30s, e.g. unit eval, small dataset)
+
+```
+exec cd /tmp/eval-{branch} && {benchmark_cmd}
+```
+
+Capture stdout + stderr. Parse fitness from last line.
+
+#### Long benchmark (>30s, e.g. GPU training, large eval set)
+
+**If `tmux` is available:**
+
+```bash
+# Start benchmark in a named tmux session
+tmux new-session -d -s eval-{short_branch_id} \
+  "cd /tmp/eval-{branch} && {benchmark_cmd} 2>&1 | tee /tmp/eval-{branch}/output.log; echo EXIT_CODE:$? >> /tmp/eval-{branch}/output.log"
+```
+
+Poll until done:
+```bash
+# Check if session is still running (every 30s)
+tmux has-session -t eval-{short_branch_id}   # exits 1 when done
+
+# Read output so far
+tail -50 /tmp/eval-{branch}/output.log
+```
+
+When session ends, read full output and extract fitness.
+
+```bash
+tmux kill-session -t eval-{short_branch_id}  # cleanup
+```
+
+**If `tmux` not available:** use blocking `exec` as before.
+
+```
 git worktree remove /tmp/eval-{branch}
 ```
 
-If the variant crashes:
-- Trivial fix (missing import, typo): fix it, re-commit, call `evo_step("code_ready")` again
+If the variant crashes (after static check passed):
+- Trivial runtime fix (wrong tensor dtype, device mismatch): fix, re-commit, retry `evo_step("code_ready")`
 - Logic error: report `success=False`
 
 ### 4. Report
@@ -81,13 +176,16 @@ evo_step("fitness_ready",
          operation=step.operation,
          target_id=step.target_id,
          parent_branches=step.parent_branches)
-# Returns: {action: "worker_done", fitness, is_new_best, ...}
 ```
 
 ## Tools
 
-- `read` / `edit` / `write` — code generation
+- `read` / `edit` / `write` — code generation (simple mutations)
+- `/coding-agent` — **preferred for crossover and complex mutations** (requires `claude` or `codex`)
+- `exec python -m py_compile` — **static check before committing** (always run)
+- `exec pyflakes` — import/name check (run if available)
 - `exec git` — branch creation, worktree management
-- `exec` — run benchmark command
+- `exec` — short benchmark execution
+- `tmux` — **long benchmark execution** (non-blocking, requires tmux)
 - `evo_step` — advance the state machine
 - `evo_check_cache` — skip duplicates

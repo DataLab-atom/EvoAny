@@ -17,6 +17,24 @@ Called by OrchestratorAgent after selection, with:
 
 ## Flow
 
+### 0. Cross-run context (first generation only)
+
+Before writing anything, check if there's relevant prior experience from past evolution runs
+on similar codebases or tasks. This gives a head start on what to try and what to avoid.
+
+**If `session-logs` skill is available:**
+```
+/session-logs search "evolve" --limit 10
+```
+
+Look for sessions where:
+- The same repo or similar task was evolved
+- The same target function names appear
+- Evolution succeeded or failed with specific patterns
+
+If found, extract: what worked, what didn't, and any key lessons.
+Prepend these to `memory/global/long_term.md` as "Prior run context".
+
 ### 1. Short-term reflection
 
 For each target that had variants this generation:
@@ -68,6 +86,7 @@ memory/global/long_term.md
 - `read` / `write` — memory file I/O
 - `exec git diff` — compare variants
 - `exec git cherry-pick` — synergy combinations
+- `/session-logs` — **cross-run meta-learning** (requires `jq` and `rg`; first generation only)
 - `evo_record_synergy` — record synergy results
 - `evo_get_lineage` — trace branch ancestry for context
 

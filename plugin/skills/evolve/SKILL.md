@@ -1,48 +1,107 @@
 ---
 name: evolve
 description: "Start evolutionary optimization on a git repository"
+metadata:
+  openclaw:
+    requires:
+      anyBins: ["lobster"]
 ---
 
 # /evolve — Start Evolution
 
 User provides: repo path, benchmark command, objective (min/max), and optionally max evaluations.
 
-## Steps
+## Step 1 — Deterministic setup via lobster
 
-1. Validate the repo:
-   - `exec git -C $ARGUMENTS status --porcelain` — must be clean
-   - `exec git -C $ARGUMENTS rev-parse HEAD` — record seed commit
+Run all pre-evolution setup as a single deterministic lobster workflow.
+This is atomic: if any step fails, the exact failure step is reported and nothing proceeds.
 
-2. Run baseline:
-   - `exec` the benchmark command in the repo
-   - Parse fitness from output (last line as float by default)
-   - Call `evo_init` with user's config
-   - Call `evo_report_seed` with baseline fitness
-   - `exec git -C <repo> tag seed-baseline`
+```json
+lobster action:run pipeline:"./plugin/workflows/evo-setup.lobster" args:{
+  "repo": "<repo_path>",
+  "benchmark": "<benchmark_cmd>",
+  "objective": "<max|min>"
+}
+```
 
-3. Analyze code (MapAgent):
-   - Spawn MapAgent to read benchmark entry file, trace call chain, identify targets
-   - MapAgent calls `evo_register_targets` with identified targets
+The workflow handles:
+- Validate repo is clean (`git status --porcelain`)
+- Run baseline benchmark, capture seed fitness
+- `git tag seed-baseline`
+- Create `memory/` directory structure
+- Initialize `~/clawd/canvas/` for dashboard
 
-4. Create memory structure:
-   - `exec mkdir -p <repo>/memory/global`
-   - For each target: `exec mkdir -p <repo>/memory/targets/<id>/short_term`
+Parse the baseline fitness from `run_baseline.stdout` (last line as float).
 
-5. Enter evolution loop — follow the Core Loop in AGENTS.md:
-   - OrchestratorAgent calls `evo_step("begin_generation")`
-     → returns `{action: "dispatch_workers", items: [...]}`
-   - Spawn one WorkerAgent per item, in parallel
-   - Each WorkerAgent: generates code → requests policy check → PolicyAgent
-     reviews diff → if approved, runs benchmark → reports fitness
-   - When all workers return, OrchestratorAgent calls `evo_step("select")`
-   - Clean up eliminated branches, tag best
-   - Spawn ReflectAgent to write memory
-   - Call `evo_step("reflect_done")` to start next generation or finish
-   - Stop when `action == "done"` or results are sufficient
+Then call the MCP tools to record it:
+- `evo_init` with user's config (repo, benchmark, objective, max_evals)
+- `evo_report_seed` with the baseline fitness value
 
-6. Report progress to user after each generation.
+**If lobster is not available**, fall back to running each step with individual `exec` calls.
 
-7. When budget exhausted:
-   - Tag best: `exec git tag best-overall <best_branch>`
-   - Push best branch
-   - Generate final report via /report
+## Step 2 — Code analysis (MapAgent)
+
+Spawn MapAgent to identify optimization targets:
+```
+sessions_spawn agentId:map_agent
+```
+
+MapAgent reads the benchmark entry file, traces the call chain (using `/oracle` if available),
+and calls `evo_register_targets`.
+
+## Step 3 — Approval gate: confirm targets before committing budget
+
+After MapAgent completes, present identified targets to the user and ask for confirmation
+before spending evaluation budget:
+
+```
+"MapAgent found {N} targets:
+  • {target_id}: {target_function} in {target_file} — {impact description}
+  • ...
+Proceed with {max_evals} evaluations? (y/n)"
+```
+
+Wait for user confirmation. If they want to adjust targets, allow editing before proceeding.
+
+## Step 4 — Initialize canvas dashboard
+
+Write initial `~/clawd/canvas/evo-dashboard.html` with seed baseline data and present it:
+```
+canvas action:present target:evo-dashboard.html
+```
+
+## Step 5 — Evolution loop
+
+Follow the Core Loop in AGENTS.md:
+- OrchestratorAgent calls `evo_step("begin_generation")`
+- Spawn one WorkerAgent per item in parallel
+- Each WorkerAgent: generates code → static validation → policy check → benchmark
+- OrchestratorAgent calls `evo_step("select")`, updates canvas dashboard
+- Spawn ReflectAgent to write memory
+- Repeat until `action == "done"` or user stops
+
+## Step 6 — Wrap up via lobster
+
+When evolution completes, build the PR body from `/report` output and the `evo-finish` workflow:
+
+```json
+lobster action:run pipeline:"./plugin/workflows/evo-finish.lobster" args:{
+  "repo": "<repo_path>",
+  "best_branch": "<best_branch_from_evo_step>",
+  "original_branch": "<original_branch>",
+  "pr_title": "evo: improve <target_ids> by <improvement>% (<benchmark_name>)",
+  "pr_body": "<full report markdown with per-target table + lessons + repro>"
+}
+```
+
+The `evo-finish` workflow:
+1. Tags `best-overall`
+2. Pushes the best branch
+3. Shows a diff stat summary
+4. **Pauses for user approval** before opening the PR
+5. Opens PR only if approved (skips entirely if denied)
+
+**If lobster is not available**, fall back to:
+- Manual `git tag` + `git push` via `exec`
+- Ask user directly: "Open PR? (y/n)"
+- Run `gh pr create` if yes

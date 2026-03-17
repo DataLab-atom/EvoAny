@@ -15,5 +15,9 @@
     }
   },
   "skills": ["./skills"],
-  "agents": ["./agents"]
+  "agents": ["./agents"],
+  "workflows": ["./workflows"],
+  "tools": {
+    "alsoAllow": ["lobster"]
+  }
 }
