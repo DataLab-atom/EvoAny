@@ -29,6 +29,7 @@
     "postinstall": "node scripts/postinstall.js"
   },
   "files": [
+    "openclaw.plugin.json",
     "dist/",
     "plugin/",
     "scripts/",
