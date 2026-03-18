@@ -4,12 +4,11 @@
   "description": "Git-based evolutionary algorithm design engine. Evolves code via LLM-driven mutation, crossover, and reflection on any git repository.",
   "version": "0.1.0",
   "skills": ["../skills"],
-  "commands": [],
   "agents": ["../agents"],
   "mcpServers": {
     "evo-engine": {
       "command": "python",
-      "args": ["../evo-engine/server.py"],
+      "args": ["server.py"],
       "cwd": "../evo-engine"
     }
   }
