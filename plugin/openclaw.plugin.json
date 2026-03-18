@@ -3,7 +3,6 @@
   "name": "Evo-anything Evolution Engine",
   "description": "Git-based evolutionary algorithm design engine. Evolves code via LLM-driven mutation, crossover, and reflection on any git repository.",
   "version": "0.1.0",
-  "kind": "agent-tool",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -14,11 +13,5 @@
       }
     }
   },
-  "skills": ["./skills"],
-  "agents": ["./agents"],
-  "workflows": ["./workflows"],
-  "tools": {
-    "server": "./evo-engine/server.py",
-    "alsoAllow": ["lobster", "canvas", "tmux"]
-  }
+  "skills": ["./skills"]
 }
