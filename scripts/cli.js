@@ -257,8 +257,27 @@ function setupOpenclaw() {
   const config = readJSON(CONFIG_PATH);
   const pkg = readJSON(path.join(PKG_ROOT, 'package.json'));
 
-  // plugins.allow — allowlist
+  // Clean up stale entries from previous installs (e.g. "openclaw-evo")
+  const STALE_IDS = ['openclaw-evo'];
   if (!config.plugins) config.plugins = {};
+  for (const stale of STALE_IDS) {
+    let cleaned = false;
+    if (config.plugins.entries && config.plugins.entries[stale]) {
+      delete config.plugins.entries[stale];
+      cleaned = true;
+    }
+    if (config.plugins.installs && config.plugins.installs[stale]) {
+      delete config.plugins.installs[stale];
+      cleaned = true;
+    }
+    if (Array.isArray(config.plugins.allow)) {
+      const idx = config.plugins.allow.indexOf(stale);
+      if (idx !== -1) { config.plugins.allow.splice(idx, 1); cleaned = true; }
+    }
+    if (cleaned) ok(`removed stale plugin entry "${stale}"`);
+  }
+
+  // plugins.allow — allowlist
   if (!Array.isArray(config.plugins.allow)) config.plugins.allow = [];
   if (!config.plugins.allow.includes('evo-anything')) {
     config.plugins.allow.push('evo-anything');
