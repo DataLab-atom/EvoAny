@@ -127,19 +127,45 @@ function diagnose() {
     if (!entry.enabled) throw new Error('plugin is disabled');
     return 'enabled';
   });
-  check('plugin id consistency', () => {
-    const extManifest = path.join(EXT_DIR, 'openclaw.plugin.json');
-    if (!fs.existsSync(extManifest)) {
-      // check if dist/index.js references are correct
-      return 'no manifest in ext dir (uses package root)';
-    }
-    const m = JSON.parse(fs.readFileSync(extManifest, 'utf8'));
+  check('plugins.allow whitelist', () => {
     const config = readJSON(CONFIG_PATH);
-    const entryKey = Object.keys(config?.plugins?.entries || {}).find(k =>
-      k === m.id || config.plugins.entries[k]?.hint === m.id
+    const allow = config?.plugins?.allow;
+    if (!Array.isArray(allow)) throw new Error('plugins.allow is missing or not an array');
+    if (!allow.includes('openclaw-evo')) throw new Error('"openclaw-evo" not in plugins.allow');
+    return `[${allow.join(', ')}]`;
+  });
+  check('plugins.installs metadata', () => {
+    const config = readJSON(CONFIG_PATH);
+    const inst = config?.plugins?.installs?.['openclaw-evo'];
+    if (!inst) throw new Error('no install entry — run "npx openclaw-evo setup"');
+    return `source=${inst.source} v=${inst.version} @ ${inst.installedAt}`;
+  });
+  check('skills.entries registration', () => {
+    const config = readJSON(CONFIG_PATH);
+    const skills = config?.skills?.entries;
+    if (!skills) throw new Error('skills.entries missing');
+    const evoSkills = Object.keys(skills).filter(k => skills[k]?.enabled);
+    if (evoSkills.length === 0) throw new Error('no skills enabled');
+    if (!skills.evolve) throw new Error('"evolve" skill not registered');
+    return `${evoSkills.length} enabled: ${evoSkills.join(', ')}`;
+  });
+  check('skill files in extensions', () => {
+    const skillsDir = path.join(EXT_DIR, 'plugin', 'skills');
+    if (!fs.existsSync(skillsDir)) throw new Error(`${skillsDir} not found`);
+    const skills = fs.readdirSync(skillsDir).filter(d =>
+      fs.existsSync(path.join(skillsDir, d, 'SKILL.md'))
     );
-    if (!entryKey) throw new Error(`manifest id "${m.id}" not found in openclaw.json`);
-    return `manifest id "${m.id}" matches config key "${entryKey}"`;
+    return `${skills.length} skills: ${skills.join(', ')}`;
+  });
+  check('manifest skill paths resolve', () => {
+    const extManifest = path.join(EXT_DIR, 'openclaw.plugin.json');
+    if (!fs.existsSync(extManifest)) throw new Error('no manifest in extensions');
+    const m = JSON.parse(fs.readFileSync(extManifest, 'utf8'));
+    for (const sp of m.skills || []) {
+      const resolved = path.resolve(EXT_DIR, sp);
+      if (!fs.existsSync(resolved)) throw new Error(`"${sp}" resolves to ${resolved} — not found`);
+    }
+    return (m.skills || []).join(', ');
   });
 
   // Summary
@@ -173,7 +199,7 @@ function setupOpenclaw() {
     ok(`dist/index.js exists`);
   }
 
-  // 2. Copy plugin files
+  // 2. Copy plugin files — preserve directory structure so manifest paths resolve
   log(`copying to ${EXT_DIR} ...`);
   fs.mkdirSync(EXT_DIR, { recursive: true });
 
@@ -185,11 +211,13 @@ function setupOpenclaw() {
   }
   ok('dist/ copied');
 
-  // Copy plugin/ (skills, workflows, etc.)
+  // Copy plugin/ INTO plugin/ (keep structure matching manifest's "./plugin/skills")
   const pluginSrc = path.join(PKG_ROOT, 'plugin');
+  const pluginDst = path.join(EXT_DIR, 'plugin');
   if (fs.existsSync(pluginSrc)) {
-    spawnSync('cp', ['-r', `${pluginSrc}/.`, EXT_DIR], { stdio: 'pipe' });
-    ok('plugin/ copied');
+    fs.mkdirSync(pluginDst, { recursive: true });
+    spawnSync('cp', ['-r', `${pluginSrc}/.`, pluginDst], { stdio: 'pipe' });
+    ok('plugin/ copied (preserving structure)');
   }
 
   // Copy manifest
@@ -199,14 +227,62 @@ function setupOpenclaw() {
     ok('openclaw.plugin.json copied');
   }
 
-  // 3. Update openclaw.json
+  // Copy package.json (needed for version info)
+  fs.copyFileSync(path.join(PKG_ROOT, 'package.json'), path.join(EXT_DIR, 'package.json'));
+  ok('package.json copied');
+
+  // 3. Discover skills from plugin/skills/*/SKILL.md
+  const skillNames = [];
+  const skillsDir = path.join(PKG_ROOT, 'plugin', 'skills');
+  if (fs.existsSync(skillsDir)) {
+    for (const d of fs.readdirSync(skillsDir)) {
+      if (fs.existsSync(path.join(skillsDir, d, 'SKILL.md'))) {
+        skillNames.push(d);
+      }
+    }
+  }
+  ok(`found ${skillNames.length} skills: ${skillNames.join(', ')}`);
+
+  // 4. Update openclaw.json with full config structure
   log(`updating ${CONFIG_PATH} ...`);
   const config = readJSON(CONFIG_PATH);
+  const pkg = readJSON(path.join(PKG_ROOT, 'package.json'));
+
+  // plugins.allow — allowlist
+  if (!config.plugins) config.plugins = {};
+  if (!Array.isArray(config.plugins.allow)) config.plugins.allow = [];
+  if (!config.plugins.allow.includes('openclaw-evo')) {
+    config.plugins.allow.push('openclaw-evo');
+  }
+  ok('plugins.allow: openclaw-evo added');
+
+  // plugins.entries
   merge(config, {
     plugins: { entries: { 'openclaw-evo': { enabled: true, config: {} } } }
   });
+  ok('plugins.entries: openclaw-evo enabled');
+
+  // plugins.installs — install metadata
+  if (!config.plugins.installs) config.plugins.installs = {};
+  config.plugins.installs['openclaw-evo'] = {
+    source: 'path',
+    sourcePath: PKG_ROOT,
+    installPath: EXT_DIR,
+    version: pkg.version || '0.1.0',
+    installedAt: new Date().toISOString()
+  };
+  ok('plugins.installs: metadata recorded');
+
+  // skills.entries — register each skill
+  if (!config.skills) config.skills = {};
+  if (!config.skills.entries) config.skills.entries = {};
+  for (const skill of skillNames) {
+    config.skills.entries[skill] = { enabled: true };
+  }
+  ok(`skills.entries: ${skillNames.join(', ')} registered`);
+
   writeJSON(CONFIG_PATH, config);
-  ok('openclaw.json updated');
+  ok('openclaw.json written');
 
   // 4. Verify
   console.log('\n── Verification ──');
