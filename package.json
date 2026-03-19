@@ -1,5 +1,5 @@
 {
-  "name": "openclaw-evo",
+  "name": "evo-anything",
   "version": "0.1.0",
   "description": "Git-based evolutionary algorithm design engine. Evolves code via LLM-driven mutation, crossover, and reflection on any git repository.",
   "keywords": [
@@ -38,6 +38,7 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "@openclaw/lobster": "^2026.3.13",
     "zod": "^3.24.0"
   },
   "devDependencies": {

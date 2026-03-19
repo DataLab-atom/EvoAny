@@ -65,7 +65,7 @@ pip install .
 <summary>CLI 一键安装（推荐）</summary>
 
 ```bash
-openclaw plugins install openclaw-evo
+openclaw plugins install evo-anything
 openclaw gateway restart
 openclaw plugins doctor   # 验证
 ```
@@ -88,14 +88,14 @@ openclaw gateway restart
 将插件复制到扩展目录，并在 `~/.openclaw/openclaw.json` 中注册：
 
 ```bash
-cp -r plugin/ ~/.openclaw/extensions/openclaw-evo/
+cp -r plugin/ ~/.openclaw/extensions/evo-anything/
 ```
 
 ```json
 {
   "plugins": {
     "entries": {
-      "openclaw-evo": {
+      "evo-anything": {
         "enabled": true,
         "config": {}
       }
@@ -213,7 +213,7 @@ export U2E_STATE_DIR=/path/to/your/state
 {
   "plugins": {
     "entries": {
-      "openclaw-evo": {
+      "evo-anything": {
         "enabled": true,
         "config": {
           "statePath": "/path/to/your/state"

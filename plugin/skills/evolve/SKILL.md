@@ -1,17 +1,21 @@
 ---
 name: evolve
 description: "Start evolutionary optimization on a git repository"
-metadata:
-  openclaw:
-    requires:
-      anyBins: ["lobster"]
 ---
 
 # /evolve — Start Evolution
 
 User provides: repo path, benchmark command, objectives (list of {name, direction} specs), and optionally max evaluations.
 
-## Step 1 — Deterministic setup via lobster
+## Step 1 — Deterministic setup
+
+> **lobster** (`@openclaw/lobster`) is bundled as a dependency and installed
+> automatically with this package. If available, setup and teardown run as
+> atomic lobster pipelines. If for some reason `lobster` is missing from
+> `$PATH`, the same steps run as individual `exec` calls — no functionality
+> is lost, lobster only adds atomicity and better error reporting.
+
+### With lobster
 
 Run all pre-evolution setup as a single deterministic lobster workflow.
 This is atomic: if any step fails, the exact failure step is reported and nothing proceeds.
@@ -38,7 +42,9 @@ Then call the MCP tools to record it:
 - `evo_init` with user's config (repo, benchmark, objectives, max_evals)
 - `evo_report_seed` with the baseline fitness values as `list[float]`
 
-**If lobster is not available**, fall back to running each step with individual `exec` calls.
+### Without lobster
+
+Fall back to running each step with individual `exec` calls (same operations, not atomic).
 
 ## Step 2 — Code analysis (MapAgent)
 
@@ -81,9 +87,11 @@ Follow the Core Loop in AGENTS.md:
 - Spawn ReflectAgent to write memory
 - Repeat until `action == "done"` or user stops
 
-## Step 6 — Wrap up via lobster
+## Step 6 — Wrap up
 
-When evolution completes, build the PR body from `/report` output and the `evo-finish` workflow:
+When evolution completes, build the PR body from `/report` output.
+
+### With lobster
 
 ```json
 lobster action:run pipeline:"./plugin/workflows/evo-finish.lobster" args:{
@@ -102,7 +110,8 @@ The `evo-finish` workflow:
 4. **Pauses for user approval** before opening the PR
 5. Opens PR only if approved (skips entirely if denied)
 
-**If lobster is not available**, fall back to:
+### Without lobster
+
 - Manual `git tag` + `git push` via `exec`
 - Ask user directly: "Open PR? (y/n)"
 - Run `gh pr create` if yes

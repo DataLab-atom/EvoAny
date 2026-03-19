@@ -63,7 +63,7 @@ pip install .
 <summary>CLI one-liner (recommended)</summary>
 
 ```bash
-openclaw plugins install openclaw-evo
+openclaw plugins install evo-anything
 openclaw gateway restart
 openclaw plugins doctor   # verify
 ```
@@ -86,14 +86,14 @@ openclaw gateway restart
 Copy the plugin to the extensions directory and register it in `~/.openclaw/openclaw.json`:
 
 ```bash
-cp -r plugin/ ~/.openclaw/extensions/openclaw-evo/
+cp -r plugin/ ~/.openclaw/extensions/evo-anything/
 ```
 
 ```json
 {
   "plugins": {
     "entries": {
-      "openclaw-evo": {
+      "evo-anything": {
         "enabled": true,
         "config": {}
       }
@@ -211,7 +211,7 @@ Or configure via `openclaw.json`:
 {
   "plugins": {
     "entries": {
-      "openclaw-evo": {
+      "evo-anything": {
         "enabled": true,
         "config": {
           "statePath": "/path/to/your/state"
