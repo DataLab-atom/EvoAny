@@ -1,10 +1,6 @@
 ---
 name: evolve
 description: "Start evolutionary optimization on a git repository"
-metadata:
-  openclaw:
-    requires:
-      anyBins: ["lobster"]
 ---
 
 # /evolve — Start Evolution

@@ -1,9 +1,9 @@
 ---
-name: status
+name: evo-status
 description: "Check current evolution progress"
 ---
 
-# /status — Evolution Status
+# /evo-status — Evolution Status
 
 Call `evo_get_status` and format the result for the user:
 
