@@ -38,6 +38,19 @@ function merge(target, source) {
   return target;
 }
 
+function copyDirRecursive(src, dst) {
+  fs.mkdirSync(dst, { recursive: true });
+  for (const entry of fs.readdirSync(src)) {
+    const srcPath = path.join(src, entry);
+    const dstPath = path.join(dst, entry);
+    if (fs.statSync(srcPath).isDirectory()) {
+      copyDirRecursive(srcPath, dstPath);
+    } else {
+      fs.copyFileSync(srcPath, dstPath);
+    }
+  }
+}
+
 function log(msg) { console.log(`  ${msg}`); }
 function ok(msg)  { console.log(`  ✓ ${msg}`); }
 function fail(msg){ console.log(`  ✗ ${msg}`); }
@@ -203,20 +216,16 @@ function setupOpenclaw() {
   log(`copying to ${EXT_DIR} ...`);
   fs.mkdirSync(EXT_DIR, { recursive: true });
 
-  // Copy dist/
+  // Copy dist/ (recursive to handle subdirectories like dist/src/)
   const distDst = path.join(EXT_DIR, 'dist');
-  fs.mkdirSync(distDst, { recursive: true });
-  for (const f of fs.readdirSync(path.join(PKG_ROOT, 'dist'))) {
-    fs.copyFileSync(path.join(PKG_ROOT, 'dist', f), path.join(distDst, f));
-  }
+  copyDirRecursive(path.join(PKG_ROOT, 'dist'), distDst);
   ok('dist/ copied');
 
   // Copy plugin/ INTO plugin/ (keep structure matching manifest's "./plugin/skills")
   const pluginSrc = path.join(PKG_ROOT, 'plugin');
   const pluginDst = path.join(EXT_DIR, 'plugin');
   if (fs.existsSync(pluginSrc)) {
-    fs.mkdirSync(pluginDst, { recursive: true });
-    spawnSync('cp', ['-r', `${pluginSrc}/.`, pluginDst], { stdio: 'pipe' });
+    copyDirRecursive(pluginSrc, pluginDst);
     ok('plugin/ copied (preserving structure)');
   }
 
