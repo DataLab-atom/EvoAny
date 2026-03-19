@@ -2,7 +2,7 @@
   "mcpServers": {
     "evo-anything": {
       "command": "node",
-      "args": ["dist/server.js"]
+      "args": ["/home/user/Evo-anything/dist/server.js"]
     }
   }
 }
