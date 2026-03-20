@@ -13,5 +13,7 @@
       }
     }
   },
-  "skills": ["./plugin/skills"]
+  "skills": ["./plugin/skills"],
+  "workflows": ["./plugin/workflows"],
+  "agents": ["./plugin/agents"]
 }
