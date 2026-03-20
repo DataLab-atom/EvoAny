@@ -40,6 +40,36 @@ import {
   paretoFrontExpanded,
 } from "./src/state.js";
 
+import {
+  ingestLiterature,
+  searchLiterature,
+  getLiteratureCount,
+} from "./src/vectordb.js";
+
+import {
+  parseBib,
+  appendBib,
+  generateKey,
+  formatEntry,
+} from "./src/bibtex.js";
+
+import {
+  initForest,
+  getForest,
+  addNode,
+  updateNode,
+  mergeNodes,
+  checkConvergence,
+  addConvergencePoint,
+  verifyConvergencePoint,
+  recordContribution,
+  incrementIteration,
+  markForestDone,
+  getForestSummary,
+} from "./src/research_state.js";
+
+import type { ContributionLevel } from "./src/models.js";
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -810,6 +840,515 @@ export default function (api: any) {
         else valid.push(tid);
       }
       return { content: [{ type: "text", text: JSON.stringify({ valid, missing }) }] };
+    },
+  });
+
+  // =======================================================================
+  // A-layer: Literature tools
+  // =======================================================================
+
+  // ── lit_ingest ──────────────────────────────────────────────────────────
+  api.registerTool({
+    name: "lit_ingest",
+    description: "Ingest a paper into the local literature vector database.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Unique ID (e.g. arXiv ID)." },
+        title: { type: "string" },
+        abstract: { type: "string" },
+        authors: { type: "array", items: { type: "string" } },
+        year: { type: "number" },
+        bibtex: { type: "string", description: "Full BibTeX entry. Auto-generated if omitted." },
+        source_url: { type: "string" },
+      },
+      required: ["id", "title", "abstract", "authors", "year"],
+    },
+    async execute(_id: string, params: any) {
+      const bibtex = params.bibtex || formatEntry({
+        key: generateKey(params.authors, params.year, params.title),
+        type: "article",
+        fields: {
+          author: params.authors.join(" and "),
+          title: params.title,
+          year: String(params.year),
+          url: params.source_url ?? "",
+        },
+      });
+      const record = ingestLiterature({
+        id: params.id, title: params.title, abstract: params.abstract,
+        authors: params.authors, year: params.year, bibtex,
+        source_url: params.source_url ?? "",
+      });
+      return { content: [{ type: "text", text: JSON.stringify({ ingested: true, id: record.id, total_papers: getLiteratureCount() }) }] };
+    },
+  });
+
+  // ── lit_search_local ────────────────────────────────────────────────────
+  api.registerTool({
+    name: "lit_search_local",
+    description: "Search the local literature vector database.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query." },
+        top_k: { type: "number", description: "Max results (default 5)." },
+      },
+      required: ["query"],
+    },
+    async execute(_id: string, params: any) {
+      const results = searchLiterature(params.query, params.top_k ?? 5);
+      return { content: [{ type: "text", text: JSON.stringify({
+        count: results.length, total_in_db: getLiteratureCount(),
+        results: results.map((r) => ({
+          id: r.record.id, title: r.record.title, authors: r.record.authors,
+          year: r.record.year, abstract: r.record.abstract.slice(0, 300),
+          bibtex: r.record.bibtex, score: Math.round(r.score * 1000) / 1000,
+        })),
+      }) }] };
+    },
+  });
+
+  // ── code_qa ─────────────────────────────────────────────────────────────
+  api.registerTool({
+    name: "code_qa",
+    description: "Answer a question about the evolved code using lineage and diff context.",
+    parameters: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "The question about the code." },
+        branch: { type: "string", description: "Branch to focus on. Defaults to best branch." },
+      },
+      required: ["question"],
+    },
+    async execute(_id: string, params: any) {
+      const state = getState();
+      const branch = params.branch ?? state.best_branch_overall ?? state.seed_branch;
+      const repo = state.config.repo_path;
+      const lineage: Record<string, unknown>[] = [];
+      const visited = new Set<string>();
+      const queue = [branch];
+      while (queue.length > 0) {
+        const b = queue.shift()!;
+        if (visited.has(b) || !(b in state.individuals)) continue;
+        visited.add(b);
+        const ind = state.individuals[b];
+        lineage.push({ branch: ind.branch, generation: ind.generation, target_id: ind.target_id, operation: ind.operation, fitness: ind.fitness, success: ind.success });
+        queue.push(...ind.parent_branches);
+      }
+      const diff = gitExec(repo, ["diff", `${state.seed_branch}..${branch}`, "--stat"]);
+      const fullDiff = gitExec(repo, ["diff", `${state.seed_branch}..${branch}`]).slice(0, 6000);
+      return { content: [{ type: "text", text: JSON.stringify({
+        question: params.question, branch, seed_branch: state.seed_branch,
+        lineage, diff_stat: diff, diff_preview: fullDiff,
+        targets: Object.keys(state.targets), best_obj: state.best_obj_overall, seed_obj: state.seed_obj,
+        note: "Use the lineage and diff context above to answer the question.",
+      }) }] };
+    },
+  });
+
+  // ── bib_append ──────────────────────────────────────────────────────────
+  api.registerTool({
+    name: "bib_append",
+    description: "Append BibTeX entries to the project references file.",
+    parameters: {
+      type: "object",
+      properties: {
+        bibtex: { type: "string", description: "BibTeX entries as a string." },
+        bib_path: { type: "string", description: "Path to .bib file." },
+      },
+      required: ["bibtex"],
+    },
+    async execute(_id: string, params: any) {
+      const state = getState();
+      const bibPath = params.bib_path ?? join(state.config.repo_path, "research", "refs", "references.bib");
+      const entries = parseBib(params.bibtex);
+      if (entries.length === 0) return { content: [{ type: "text", text: JSON.stringify({ error: "No valid BibTeX entries found." }) }] };
+      const added = appendBib(bibPath, entries);
+      return { content: [{ type: "text", text: JSON.stringify({ added, total_entries_parsed: entries.length, bib_path: bibPath }) }] };
+    },
+  });
+
+  // =======================================================================
+  // B-layer: Visualization tools
+  // =======================================================================
+
+  // ── viz_generate ────────────────────────────────────────────────────────
+  api.registerTool({
+    name: "viz_generate",
+    description: "Generate an analysis chart driven by an expected conclusion.",
+    parameters: {
+      type: "object",
+      properties: {
+        expectation: { type: "string", description: "Expected conclusion." },
+        data_description: { type: "string", description: "Description of available data." },
+        chart_type: { type: "string", description: "Chart type: line, bar, heatmap, scatter." },
+        output_dir: { type: "string" },
+      },
+      required: ["expectation", "data_description"],
+    },
+    async execute(_id: string, params: any) {
+      const state = getState();
+      const outputDir = params.output_dir ?? join(state.config.repo_path, "research", "figures");
+      return { content: [{ type: "text", text: JSON.stringify({
+        action: "generate_chart", expectation: params.expectation,
+        data_description: params.data_description, chart_type: params.chart_type ?? "auto",
+        output_dir: outputDir,
+        instructions: [
+          "1. Write a Python script using matplotlib/seaborn.",
+          "2. Load data as described.",
+          "3. Chart should support or refute the expectation.",
+          `4. Save to ${outputDir}/<name>.png at 300 DPI.`,
+        ],
+      }) }] };
+    },
+  });
+
+  // ── viz_highlight ───────────────────────────────────────────────────────
+  api.registerTool({
+    name: "viz_highlight",
+    description: "Analyze a chart against expectations and identify highlights.",
+    parameters: {
+      type: "object",
+      properties: {
+        chart_path: { type: "string" },
+        expectation: { type: "string" },
+        data_summary: { type: "string" },
+      },
+      required: ["chart_path", "expectation", "data_summary"],
+    },
+    async execute(_id: string, params: any) {
+      return { content: [{ type: "text", text: JSON.stringify({
+        action: "highlight_analysis", chart_path: params.chart_path,
+        expectation: params.expectation, data_summary: params.data_summary,
+        instructions: [
+          "1. Compare data against expectation quantitatively.",
+          "2. Identify specific supporting data points.",
+          "3. Note discrepancies.",
+        ],
+      }) }] };
+    },
+  });
+
+  // ── viz_polish ──────────────────────────────────────────────────────────
+  api.registerTool({
+    name: "viz_polish",
+    description: "Polish a chart to publication quality.",
+    parameters: {
+      type: "object",
+      properties: {
+        chart_path: { type: "string" },
+        target_venue: { type: "string", description: "Target venue (NeurIPS, CVPR, etc.)." },
+      },
+      required: ["chart_path"],
+    },
+    async execute(_id: string, params: any) {
+      return { content: [{ type: "text", text: JSON.stringify({
+        action: "polish_chart", chart_path: params.chart_path,
+        target_venue: params.target_venue ?? "general",
+        instructions: [
+          "1. Call /ask-lit for venue style guidelines.",
+          "2. Adjust fonts, colors, line widths.",
+          "3. Ensure >= 300 DPI.",
+        ],
+      }) }] };
+    },
+  });
+
+  // =======================================================================
+  // B-layer: Benchmark supplement tools
+  // =======================================================================
+
+  // ── bench_adapt ─────────────────────────────────────────────────────────
+  api.registerTool({
+    name: "bench_adapt",
+    description: "Adapt code to run on a new dataset or benchmark configuration.",
+    parameters: {
+      type: "object",
+      properties: {
+        dataset_name: { type: "string" },
+        requirement: { type: "string" },
+        code_path: { type: "string" },
+      },
+      required: ["dataset_name", "requirement"],
+    },
+    async execute(_id: string, params: any) {
+      const state = getState();
+      return { content: [{ type: "text", text: JSON.stringify({
+        action: "adapt_code", dataset_name: params.dataset_name,
+        requirement: params.requirement, code_path: params.code_path ?? state.config.repo_path,
+        instructions: [
+          "1. Call /ask-lit for standard evaluation protocol.",
+          "2. Use code_qa to analyze existing data interfaces.",
+          "3. Write/modify dataloader and eval scripts.",
+        ],
+      }) }] };
+    },
+  });
+
+  // ── bench_run ───────────────────────────────────────────────────────────
+  api.registerTool({
+    name: "bench_run",
+    description: "Run a benchmark in an isolated git worktree.",
+    parameters: {
+      type: "object",
+      properties: {
+        branch: { type: "string" },
+        benchmark_cmd: { type: "string" },
+        worktree_path: { type: "string" },
+      },
+      required: ["branch", "benchmark_cmd"],
+    },
+    async execute(_id: string, params: any) {
+      const state = getState();
+      const repo = state.config.repo_path;
+      const wtPath = params.worktree_path ?? join(repo, ".worktrees", `bench-${Date.now().toString(36)}`);
+      return { content: [{ type: "text", text: JSON.stringify({
+        action: "run_benchmark", branch: params.branch,
+        benchmark_cmd: params.benchmark_cmd, repo_path: repo, worktree_path: wtPath,
+        instructions: [
+          `1. git -C ${repo} worktree add ${wtPath} ${params.branch}`,
+          `2. cd ${wtPath} && ${params.benchmark_cmd}`,
+          "3. Parse output.",
+          `4. git -C ${repo} worktree remove ${wtPath} --force`,
+        ],
+      }) }] };
+    },
+  });
+
+  // ── bench_validate ──────────────────────────────────────────────────────
+  api.registerTool({
+    name: "bench_validate",
+    description: "Validate benchmark results against known SOTA.",
+    parameters: {
+      type: "object",
+      properties: {
+        dataset_name: { type: "string" },
+        metrics: { type: "object", additionalProperties: { type: "number" } },
+        method_name: { type: "string" },
+      },
+      required: ["dataset_name", "metrics"],
+    },
+    async execute(_id: string, params: any) {
+      return { content: [{ type: "text", text: JSON.stringify({
+        action: "validate_results", dataset_name: params.dataset_name,
+        metrics: params.metrics, method_name: params.method_name ?? "ours",
+        instructions: [
+          `/ask-lit for SOTA values on ${params.dataset_name}.`,
+          "Compare each metric against known SOTA.",
+          "Flag suspicious results.",
+        ],
+      }) }] };
+    },
+  });
+
+  // =======================================================================
+  // C-layer: Research derivation forest tools
+  // =======================================================================
+
+  // ── research_init_forest ────────────────────────────────────────────────
+  api.registerTool({
+    name: "research_init_forest",
+    description: "Initialize a derivation forest from evolution results.",
+    parameters: {
+      type: "object",
+      properties: {
+        forest_id: { type: "string" },
+        evo_summary: { type: "string" },
+      },
+      required: ["forest_id"],
+    },
+    async execute(_id: string, params: any) {
+      let summary = params.evo_summary ?? "";
+      if (!summary) {
+        try {
+          const state = getState();
+          summary = `Evolution: gen=${state.generation}, evals=${state.total_evals}, best=${JSON.stringify(state.best_obj_overall)}, targets=${Object.keys(state.targets).join(",")}`;
+        } catch { summary = "No evolution state available."; }
+      }
+      const forest = initForest(params.forest_id, summary);
+      return { content: [{ type: "text", text: JSON.stringify({ forest_id: forest.id, status: forest.status, evo_summary: summary }) }] };
+    },
+  });
+
+  // ── research_add_node ───────────────────────────────────────────────────
+  api.registerTool({
+    name: "research_add_node",
+    description: "Add a node to the derivation forest.",
+    parameters: {
+      type: "object",
+      properties: {
+        forest_id: { type: "string" },
+        type: { type: "string", enum: ["change", "hypothesis", "evidence", "question"] },
+        content: { type: "string" },
+        parent_ids: { type: "array", items: { type: "string" } },
+        source_branches: { type: "array", items: { type: "string" } },
+        literature_refs: { type: "array", items: { type: "string" } },
+        experiment_ids: { type: "array", items: { type: "string" } },
+      },
+      required: ["forest_id", "type", "content"],
+    },
+    async execute(_id: string, params: any) {
+      const node = addNode(params.forest_id, params.type, params.content, {
+        parent_ids: params.parent_ids, source_branches: params.source_branches,
+        literature_refs: params.literature_refs, experiment_ids: params.experiment_ids,
+      });
+      if (!node) return { content: [{ type: "text", text: JSON.stringify({ error: `Forest '${params.forest_id}' not found.` }) }] };
+      return { content: [{ type: "text", text: JSON.stringify({ node_id: node.id, type: node.type, depth: node.depth }) }] };
+    },
+  });
+
+  // ── research_update_node ────────────────────────────────────────────────
+  api.registerTool({
+    name: "research_update_node",
+    description: "Update a node in the derivation forest.",
+    parameters: {
+      type: "object",
+      properties: {
+        forest_id: { type: "string" }, node_id: { type: "string" },
+        content: { type: "string" },
+        status: { type: "string", enum: ["active", "pruned", "converged"] },
+        literature_refs: { type: "array", items: { type: "string" } },
+        experiment_ids: { type: "array", items: { type: "string" } },
+      },
+      required: ["forest_id", "node_id"],
+    },
+    async execute(_id: string, params: any) {
+      const node = updateNode(params.forest_id, params.node_id, {
+        content: params.content, status: params.status,
+        literature_refs: params.literature_refs, experiment_ids: params.experiment_ids,
+      });
+      if (!node) return { content: [{ type: "text", text: JSON.stringify({ error: "Node not found." }) }] };
+      return { content: [{ type: "text", text: JSON.stringify({ node_id: node.id, status: node.status }) }] };
+    },
+  });
+
+  // ── research_merge_nodes ────────────────────────────────────────────────
+  api.registerTool({
+    name: "research_merge_nodes",
+    description: "Merge multiple derivation nodes into one.",
+    parameters: {
+      type: "object",
+      properties: {
+        forest_id: { type: "string" },
+        node_ids: { type: "array", items: { type: "string" } },
+        merged_content: { type: "string" },
+      },
+      required: ["forest_id", "node_ids", "merged_content"],
+    },
+    async execute(_id: string, params: any) {
+      const node = mergeNodes(params.forest_id, params.node_ids, params.merged_content);
+      if (!node) return { content: [{ type: "text", text: JSON.stringify({ error: "Merge failed." }) }] };
+      return { content: [{ type: "text", text: JSON.stringify({ merged_node_id: node.id, depth: node.depth }) }] };
+    },
+  });
+
+  // ── research_check_convergence ──────────────────────────────────────────
+  api.registerTool({
+    name: "research_check_convergence",
+    description: "Check if derivation branches converge.",
+    parameters: { type: "object", properties: { forest_id: { type: "string" } }, required: ["forest_id"] },
+    async execute(_id: string, params: any) {
+      const result = checkConvergence(params.forest_id);
+      const summary = getForestSummary(params.forest_id);
+      return { content: [{ type: "text", text: JSON.stringify({ ...result, forest_summary: summary }) }] };
+    },
+  });
+
+  // ── research_add_convergence_point ──────────────────────────────────────
+  api.registerTool({
+    name: "research_add_convergence_point",
+    description: "Register a convergence point (deep motivation Q).",
+    parameters: {
+      type: "object",
+      properties: {
+        forest_id: { type: "string" },
+        question: { type: "string" },
+        contributing_node_ids: { type: "array", items: { type: "string" } },
+      },
+      required: ["forest_id", "question", "contributing_node_ids"],
+    },
+    async execute(_id: string, params: any) {
+      const point = addConvergencePoint(params.forest_id, params.question, params.contributing_node_ids);
+      if (!point) return { content: [{ type: "text", text: JSON.stringify({ error: "Forest not found." }) }] };
+      return { content: [{ type: "text", text: JSON.stringify({ point_id: point.id, question: point.question }) }] };
+    },
+  });
+
+  // ── research_verify_convergence_point ───────────────────────────────────
+  api.registerTool({
+    name: "research_verify_convergence_point",
+    description: "Verify or reject a convergence point.",
+    parameters: {
+      type: "object",
+      properties: {
+        forest_id: { type: "string" }, point_id: { type: "string" },
+        verified: { type: "boolean" },
+        evidence_ids: { type: "array", items: { type: "string" } },
+      },
+      required: ["forest_id", "point_id", "verified"],
+    },
+    async execute(_id: string, params: any) {
+      const point = verifyConvergencePoint(params.forest_id, params.point_id, params.verified, params.evidence_ids ?? []);
+      if (!point) return { content: [{ type: "text", text: JSON.stringify({ error: "Point not found." }) }] };
+      return { content: [{ type: "text", text: JSON.stringify({ point_id: point.id, verification_status: point.verification_status }) }] };
+    },
+  });
+
+  // ── research_record_contribution ────────────────────────────────────────
+  api.registerTool({
+    name: "research_record_contribution",
+    description: "Grade a contribution as primary or auxiliary.",
+    parameters: {
+      type: "object",
+      properties: {
+        forest_id: { type: "string" }, convergence_point_id: { type: "string" },
+        level: { type: "string", enum: ["primary", "auxiliary"] },
+        description: { type: "string" },
+      },
+      required: ["forest_id", "convergence_point_id", "level", "description"],
+    },
+    async execute(_id: string, params: any) {
+      const success = recordContribution(params.forest_id, params.convergence_point_id, params.level as ContributionLevel, params.description);
+      if (!success) return { content: [{ type: "text", text: JSON.stringify({ error: "Failed to record." }) }] };
+      return { content: [{ type: "text", text: JSON.stringify({ recorded: true, level: params.level }) }] };
+    },
+  });
+
+  // ── research_get_forest ─────────────────────────────────────────────────
+  api.registerTool({
+    name: "research_get_forest",
+    description: "Get derivation forest state and summary.",
+    parameters: {
+      type: "object",
+      properties: {
+        forest_id: { type: "string" },
+        include_nodes: { type: "boolean", description: "Include full nodes (default true)." },
+      },
+      required: ["forest_id"],
+    },
+    async execute(_id: string, params: any) {
+      const forest = getForest(params.forest_id);
+      if (!forest) return { content: [{ type: "text", text: JSON.stringify({ error: "Forest not found." }) }] };
+      const summary = getForestSummary(params.forest_id);
+      if (params.include_nodes === false) return { content: [{ type: "text", text: JSON.stringify({ summary }) }] };
+      return { content: [{ type: "text", text: JSON.stringify({ summary, forest }) }] };
+    },
+  });
+
+  // ── research_iterate ────────────────────────────────────────────────────
+  api.registerTool({
+    name: "research_iterate",
+    description: "Increment forest iteration counter.",
+    parameters: { type: "object", properties: { forest_id: { type: "string" } }, required: ["forest_id"] },
+    async execute(_id: string, params: any) {
+      const count = incrementIteration(params.forest_id);
+      if (count < 0) return { content: [{ type: "text", text: JSON.stringify({ error: "Forest not found." }) }] };
+      const forest = getForest(params.forest_id);
+      const maxIter = forest?.max_iterations ?? 20;
+      const shouldContinue = count < maxIter && forest?.status !== "done";
+      if (!shouldContinue && forest?.status !== "done") markForestDone(params.forest_id);
+      return { content: [{ type: "text", text: JSON.stringify({ iteration: count, max_iterations: maxIter, continue: shouldContinue, status: forest?.status }) }] };
     },
   });
 }

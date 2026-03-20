@@ -115,7 +115,7 @@ openclaw gateway restart
 
 </details>
 
-**Verify:** Type `/status` in a conversation. Seeing "Evolution not initialized" means the install succeeded.
+**Verify:** Type `/evo-status` in a conversation. Seeing "Evolution not initialized" means the install succeeded.
 
 ---
 
@@ -193,7 +193,17 @@ Evo-anything's core is a standard [MCP](https://modelcontextprotocol.io) server.
 evo-engine
 ```
 
-Available MCP tools: `evo_init`, `evo_register_targets`, `evo_report_seed`, `evo_step`, `evo_next_batch`, `evo_report_fitness`, `evo_select_survivors`, `evo_revalidate_targets`, `evo_get_status`, `evo_get_lineage`, `evo_freeze_target`, `evo_boost_target`, `evo_record_synergy`, `evo_check_cache`.
+Available MCP tools (34 total):
+
+**Evolution Core (14):** `evo_init`, `evo_register_targets`, `evo_report_seed`, `evo_step`, `evo_next_batch`, `evo_report_fitness`, `evo_select_survivors`, `evo_revalidate_targets`, `evo_get_status`, `evo_get_lineage`, `evo_freeze_target`, `evo_boost_target`, `evo_record_synergy`, `evo_check_cache`
+
+**Literature & Knowledge (4):** `lit_ingest`, `lit_search_local`, `code_qa`, `bib_append`
+
+**Visualization (3):** `viz_generate`, `viz_highlight`, `viz_polish`
+
+**Benchmarking (3):** `bench_adapt`, `bench_run`, `bench_validate`
+
+**Research Derivation Forest (10):** `research_init_forest`, `research_add_node`, `research_update_node`, `research_merge_nodes`, `research_check_convergence`, `research_add_convergence_point`, `research_verify_convergence_point`, `research_record_contribution`, `research_get_forest`, `research_iterate`
 
 ---
 
@@ -270,10 +280,13 @@ The best result of each generation is tagged (`best-gen-{N}`), and the final `be
 |---------|-------------|
 | `/hunt <task description>` | Search GitHub for a suitable repo, auto clone/install/baseline, then start evolution |
 | `/evolve <repo> <benchmark_cmd>` | Start an evolutionary optimization loop on a given repo |
-| `/status` | Check current evolution progress |
+| `/evo-status` | Check current evolution progress |
 | `/report` | Generate a full evolution report |
 | `/boost <target_id>` | Increase the priority of an optimization target |
 | `/freeze <target_id>` | Freeze a target, stopping evolution on it |
+| `/search-lit <query>` | Search local literature database for relevant papers |
+| `/ask-lit <question>` | Answer a research question using ingested literature |
+| `/research-loop` | Start a research derivation forest iteration loop |
 
 ## Repository Structure
 

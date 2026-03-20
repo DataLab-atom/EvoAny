@@ -18,7 +18,9 @@
     "node": ">=16"
   },
   "openclaw": {
-    "extensions": ["./dist/index.js"]
+    "extensions": [
+      "./dist/index.js"
+    ]
   },
   "bin": {
     "evo-anything": "scripts/cli.js"

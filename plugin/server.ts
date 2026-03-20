@@ -41,6 +41,37 @@ import {
   paretoFrontExpanded,
 } from "./src/state.js";
 
+import {
+  ingestLiterature,
+  searchLiterature,
+  getLiteratureCount,
+} from "./src/vectordb.js";
+
+import {
+  parseBib,
+  appendBib,
+  generateKey,
+  formatEntry,
+  type BibEntry,
+} from "./src/bibtex.js";
+
+import {
+  initForest,
+  getForest,
+  addNode,
+  updateNode,
+  mergeNodes,
+  checkConvergence,
+  addConvergencePoint,
+  verifyConvergencePoint,
+  recordContribution,
+  incrementIteration,
+  markForestDone,
+  getForestSummary,
+} from "./src/research_state.js";
+
+import type { ContributionLevel } from "./src/models.js";
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -795,6 +826,530 @@ server.tool(
       else valid.push(tid);
     }
     return ok({ valid, missing });
+  },
+);
+
+// ===========================================================================
+// A-layer: Literature tools
+// ===========================================================================
+
+// ── lit_ingest ────────────────────────────────────────────────────────────
+
+server.tool(
+  "lit_ingest",
+  "Ingest a paper into the local literature vector database.",
+  {
+    id: z.string().describe("Unique ID (e.g. arXiv ID like '2503.10721')."),
+    title: z.string(),
+    abstract: z.string(),
+    authors: z.array(z.string()),
+    year: z.number(),
+    bibtex: z.string().optional().describe("Full BibTeX entry. Auto-generated if omitted."),
+    source_url: z.string().optional(),
+  },
+  async (params) => {
+    const bibtex = params.bibtex || formatEntry({
+      key: generateKey(params.authors, params.year, params.title),
+      type: "article",
+      fields: {
+        author: params.authors.join(" and "),
+        title: params.title,
+        year: String(params.year),
+        url: params.source_url ?? "",
+      },
+    });
+    const record = ingestLiterature({
+      id: params.id,
+      title: params.title,
+      abstract: params.abstract,
+      authors: params.authors,
+      year: params.year,
+      bibtex,
+      source_url: params.source_url ?? "",
+    });
+    return ok({ ingested: true, id: record.id, total_papers: getLiteratureCount() });
+  },
+);
+
+// ── lit_search_local ──────────────────────────────────────────────────────
+
+server.tool(
+  "lit_search_local",
+  "Search the local literature vector database.",
+  {
+    query: z.string().describe("Search query — topic, keywords, or research question."),
+    top_k: z.number().optional().describe("Max results to return (default 5)."),
+  },
+  async (params) => {
+    const results = searchLiterature(params.query, params.top_k ?? 5);
+    return ok({
+      count: results.length,
+      total_in_db: getLiteratureCount(),
+      results: results.map((r) => ({
+        id: r.record.id,
+        title: r.record.title,
+        authors: r.record.authors,
+        year: r.record.year,
+        abstract: r.record.abstract.slice(0, 300),
+        bibtex: r.record.bibtex,
+        score: Math.round(r.score * 1000) / 1000,
+      })),
+    });
+  },
+);
+
+// ── code_qa ───────────────────────────────────────────────────────────────
+
+server.tool(
+  "code_qa",
+  "Answer a question about the evolved code using lineage and diff context.",
+  {
+    question: z.string().describe("The question about the code."),
+    branch: z.string().optional().describe("Branch to focus on. Defaults to best branch."),
+  },
+  async (params) => {
+    const state = getState();
+    const branch = params.branch ?? state.best_branch_overall ?? state.seed_branch;
+    const repo = state.config.repo_path;
+
+    // Gather context: lineage + diff
+    const lineage: Record<string, unknown>[] = [];
+    const visited = new Set<string>();
+    const queue = [branch];
+    while (queue.length > 0) {
+      const b = queue.shift()!;
+      if (visited.has(b) || !(b in state.individuals)) continue;
+      visited.add(b);
+      const ind = state.individuals[b];
+      lineage.push({
+        branch: ind.branch, generation: ind.generation, target_id: ind.target_id,
+        operation: ind.operation, fitness: ind.fitness, success: ind.success,
+      });
+      queue.push(...ind.parent_branches);
+    }
+
+    const diff = gitExec(repo, ["diff", `${state.seed_branch}..${branch}`, "--stat"]);
+    const fullDiff = gitExec(repo, ["diff", `${state.seed_branch}..${branch}`]).slice(0, 6000);
+
+    return ok({
+      question: params.question,
+      branch,
+      seed_branch: state.seed_branch,
+      lineage,
+      diff_stat: diff,
+      diff_preview: fullDiff,
+      targets: Object.keys(state.targets),
+      best_obj: state.best_obj_overall,
+      seed_obj: state.seed_obj,
+      note: "Use the lineage and diff context above to answer the question. For deeper analysis, read specific files with the read tool.",
+    });
+  },
+);
+
+// ── bib_append ────────────────────────────────────────────────────────────
+
+server.tool(
+  "bib_append",
+  "Append BibTeX entries to the project references file, deduplicating automatically.",
+  {
+    bibtex: z.string().describe("One or more BibTeX entries as a string."),
+    bib_path: z.string().optional().describe("Path to .bib file. Defaults to research/refs/references.bib relative to repo."),
+  },
+  async (params) => {
+    const state = getState();
+    const bibPath = params.bib_path ?? join(state.config.repo_path, "research", "refs", "references.bib");
+    const entries = parseBib(params.bibtex);
+    if (entries.length === 0) return ok({ error: "No valid BibTeX entries found in input." });
+    const added = appendBib(bibPath, entries);
+    return ok({ added, total_entries_parsed: entries.length, bib_path: bibPath });
+  },
+);
+
+// ===========================================================================
+// B-layer: Visualization tools
+// ===========================================================================
+
+// ── viz_generate ──────────────────────────────────────────────────────────
+
+server.tool(
+  "viz_generate",
+  "Generate an analysis chart driven by an expected conclusion. Returns a Python script for chart generation.",
+  {
+    expectation: z.string().describe("Expected conclusion, e.g. 'Our loss curve is more stable than baseline'."),
+    data_description: z.string().describe("Description of available data and where to find it."),
+    chart_type: z.string().optional().describe("Preferred chart type: line, bar, heatmap, scatter. Auto-selected if omitted."),
+    output_dir: z.string().optional().describe("Directory for output figures."),
+  },
+  async (params) => {
+    const state = getState();
+    const outputDir = params.output_dir ?? join(state.config.repo_path, "research", "figures");
+    return ok({
+      action: "generate_chart",
+      expectation: params.expectation,
+      data_description: params.data_description,
+      chart_type: params.chart_type ?? "auto",
+      output_dir: outputDir,
+      instructions: [
+        "1. Write a Python script using matplotlib/seaborn to generate the chart.",
+        "2. Load data as described in data_description.",
+        "3. The chart should visually support or refute the expectation.",
+        `4. Save to ${outputDir}/<descriptive_name>.png at 300 DPI.`,
+        "5. Return the chart path and whether data supports the expectation.",
+      ],
+    });
+  },
+);
+
+// ── viz_highlight ─────────────────────────────────────────────────────────
+
+server.tool(
+  "viz_highlight",
+  "Analyze a chart against expectations and identify highlight data points.",
+  {
+    chart_path: z.string().describe("Path to the generated chart image."),
+    expectation: z.string().describe("The expected conclusion to verify."),
+    data_summary: z.string().describe("Numerical summary of the charted data."),
+  },
+  async (params) => {
+    return ok({
+      action: "highlight_analysis",
+      chart_path: params.chart_path,
+      expectation: params.expectation,
+      data_summary: params.data_summary,
+      instructions: [
+        "1. Compare the data summary against the expectation quantitatively.",
+        "2. Identify specific data points/regions that best support the conclusion.",
+        "3. Note any discrepancies between expectation and actual data.",
+        "4. Return: { consistent: bool, highlights: [...], discrepancies: [...] }",
+      ],
+    });
+  },
+);
+
+// ── viz_polish ────────────────────────────────────────────────────────────
+
+server.tool(
+  "viz_polish",
+  "Polish a chart to publication quality by consulting literature for style standards.",
+  {
+    chart_path: z.string().describe("Path to the chart to polish."),
+    target_venue: z.string().optional().describe("Target venue (e.g. 'NeurIPS', 'CVPR'). Used to look up style guidelines."),
+  },
+  async (params) => {
+    return ok({
+      action: "polish_chart",
+      chart_path: params.chart_path,
+      target_venue: params.target_venue ?? "general",
+      instructions: [
+        "1. Call /ask-lit to find figure style guidelines for the target venue.",
+        "2. Adjust: font sizes (typically 8-10pt), color scheme (colorblind-safe), line widths, legends.",
+        "3. Ensure resolution >= 300 DPI, appropriate for single/double column.",
+        "4. Save polished version alongside original.",
+      ],
+    });
+  },
+);
+
+// ===========================================================================
+// B-layer: Benchmark supplement tools
+// ===========================================================================
+
+// ── bench_adapt ───────────────────────────────────────────────────────────
+
+server.tool(
+  "bench_adapt",
+  "Adapt code to run on a new dataset or benchmark configuration.",
+  {
+    dataset_name: z.string().describe("Target dataset name (e.g. 'CIFAR-100-LT', 'ImageNet-LT')."),
+    requirement: z.string().describe("What needs to be adapted and why."),
+    code_path: z.string().optional().describe("Path to the code to adapt. Defaults to repo root."),
+  },
+  async (params) => {
+    const state = getState();
+    const codePath = params.code_path ?? state.config.repo_path;
+    return ok({
+      action: "adapt_code",
+      dataset_name: params.dataset_name,
+      requirement: params.requirement,
+      code_path: codePath,
+      instructions: [
+        "1. Call /ask-lit to confirm standard evaluation protocol for this dataset.",
+        "2. Use code_qa to analyze existing data loading interfaces.",
+        "3. Write/modify dataloader, preprocessing, and evaluation scripts.",
+        "4. Ensure the adapted code can be run with bench_run.",
+        "5. Return the list of modified/created files.",
+      ],
+    });
+  },
+);
+
+// ── bench_run ─────────────────────────────────────────────────────────────
+
+server.tool(
+  "bench_run",
+  "Run a benchmark in an isolated git worktree and collect results.",
+  {
+    branch: z.string().describe("Branch to evaluate."),
+    benchmark_cmd: z.string().describe("Command to run the benchmark."),
+    worktree_path: z.string().optional().describe("Worktree path. Auto-created if omitted."),
+  },
+  async (params) => {
+    const state = getState();
+    const repo = state.config.repo_path;
+    const wtPath = params.worktree_path ?? join(repo, ".worktrees", `bench-${Date.now().toString(36)}`);
+
+    return ok({
+      action: "run_benchmark",
+      branch: params.branch,
+      benchmark_cmd: params.benchmark_cmd,
+      repo_path: repo,
+      worktree_path: wtPath,
+      instructions: [
+        `1. Create worktree: git -C ${repo} worktree add ${wtPath} ${params.branch}`,
+        `2. Run benchmark: cd ${wtPath} && ${params.benchmark_cmd}`,
+        "3. Parse output according to benchmark_format in evolution config.",
+        `4. Clean up: git -C ${repo} worktree remove ${wtPath} --force`,
+        "5. Return parsed results as { metrics: { name: value, ... }, raw_output: '...' }",
+      ],
+    });
+  },
+);
+
+// ── bench_validate ────────────────────────────────────────────────────────
+
+server.tool(
+  "bench_validate",
+  "Validate benchmark results against known SOTA values from literature.",
+  {
+    dataset_name: z.string().describe("Dataset the benchmark was run on."),
+    metrics: z.record(z.string(), z.number()).describe("Metric name → value map."),
+    method_name: z.string().optional().describe("Name of the method being evaluated."),
+  },
+  async (params) => {
+    return ok({
+      action: "validate_results",
+      dataset_name: params.dataset_name,
+      metrics: params.metrics,
+      method_name: params.method_name ?? "ours",
+      instructions: [
+        `1. Call /ask-lit to find published SOTA values for ${params.dataset_name}.`,
+        "2. Compare each metric against known SOTA.",
+        "3. Flag results that are suspiciously high (>5% above SOTA) or low.",
+        "4. Check if additional standard benchmarks should be run.",
+        "5. Return: { reasonable: bool, comparisons: [...], suggestions: [...] }",
+      ],
+    });
+  },
+);
+
+// ===========================================================================
+// C-layer: Research derivation forest tools
+// ===========================================================================
+
+// ── research_init_forest ──────────────────────────────────────────────────
+
+server.tool(
+  "research_init_forest",
+  "Initialize a derivation forest from evolution results.",
+  {
+    forest_id: z.string().describe("Unique ID for this research forest."),
+    evo_summary: z.string().optional().describe("Summary of evolution results. Auto-generated from evo_get_status if omitted."),
+  },
+  async (params) => {
+    let summary = params.evo_summary ?? "";
+    if (!summary) {
+      try {
+        const state = getState();
+        summary = `Evolution: gen=${state.generation}, evals=${state.total_evals}, best=${JSON.stringify(state.best_obj_overall)}, targets=${Object.keys(state.targets).join(",")}`;
+      } catch {
+        summary = "No evolution state available.";
+      }
+    }
+    const forest = initForest(params.forest_id, summary);
+    return ok({ forest_id: forest.id, status: forest.status, evo_summary: summary });
+  },
+);
+
+// ── research_add_node ─────────────────────────────────────────────────────
+
+server.tool(
+  "research_add_node",
+  "Add a node to the derivation forest.",
+  {
+    forest_id: z.string(),
+    type: z.enum(["change", "hypothesis", "evidence", "question"]),
+    content: z.string().describe("Node content — what this node represents."),
+    parent_ids: z.array(z.string()).optional(),
+    source_branches: z.array(z.string()).optional().describe("Git branches related to this node."),
+    literature_refs: z.array(z.string()).optional().describe("BibTeX keys."),
+    experiment_ids: z.array(z.string()).optional().describe("B-layer experiment IDs."),
+  },
+  async (params) => {
+    const node = addNode(params.forest_id, params.type, params.content, {
+      parent_ids: params.parent_ids,
+      source_branches: params.source_branches,
+      literature_refs: params.literature_refs,
+      experiment_ids: params.experiment_ids,
+    });
+    if (!node) return ok({ error: `Forest '${params.forest_id}' not found.` });
+    return ok({ node_id: node.id, type: node.type, depth: node.depth, parent_ids: node.parent_ids });
+  },
+);
+
+// ── research_update_node ──────────────────────────────────────────────────
+
+server.tool(
+  "research_update_node",
+  "Update an existing node in the derivation forest.",
+  {
+    forest_id: z.string(),
+    node_id: z.string(),
+    content: z.string().optional(),
+    status: z.enum(["active", "pruned", "converged"]).optional(),
+    literature_refs: z.array(z.string()).optional(),
+    experiment_ids: z.array(z.string()).optional(),
+  },
+  async (params) => {
+    const node = updateNode(params.forest_id, params.node_id, {
+      content: params.content,
+      status: params.status,
+      literature_refs: params.literature_refs,
+      experiment_ids: params.experiment_ids,
+    });
+    if (!node) return ok({ error: `Node '${params.node_id}' not found in forest '${params.forest_id}'.` });
+    return ok({ node_id: node.id, status: node.status, updated_at: node.updated_at });
+  },
+);
+
+// ── research_merge_nodes ──────────────────────────────────────────────────
+
+server.tool(
+  "research_merge_nodes",
+  "Merge multiple derivation nodes into one (when they represent the same concept).",
+  {
+    forest_id: z.string(),
+    node_ids: z.array(z.string()).describe("IDs of nodes to merge."),
+    merged_content: z.string().describe("Content for the merged node."),
+  },
+  async (params) => {
+    const node = mergeNodes(params.forest_id, params.node_ids, params.merged_content);
+    if (!node) return ok({ error: "Merge failed — forest or nodes not found." });
+    return ok({ merged_node_id: node.id, depth: node.depth, original_count: params.node_ids.length });
+  },
+);
+
+// ── research_check_convergence ────────────────────────────────────────────
+
+server.tool(
+  "research_check_convergence",
+  "Check if derivation branches converge to a shared deep motivation.",
+  {
+    forest_id: z.string(),
+  },
+  async (params) => {
+    const result = checkConvergence(params.forest_id);
+    const summary = getForestSummary(params.forest_id);
+    return ok({ ...result, forest_summary: summary });
+  },
+);
+
+// ── research_add_convergence_point ────────────────────────────────────────
+
+server.tool(
+  "research_add_convergence_point",
+  "Register a convergence point — the deep motivation Q discovered from branch convergence.",
+  {
+    forest_id: z.string(),
+    question: z.string().describe("The deep motivation Q — a clear, testable statement."),
+    contributing_node_ids: z.array(z.string()).describe("Node IDs that converge to this point."),
+  },
+  async (params) => {
+    const point = addConvergencePoint(params.forest_id, params.question, params.contributing_node_ids);
+    if (!point) return ok({ error: `Forest '${params.forest_id}' not found.` });
+    return ok({ point_id: point.id, question: point.question, status: point.verification_status });
+  },
+);
+
+// ── research_verify_convergence_point ─────────────────────────────────────
+
+server.tool(
+  "research_verify_convergence_point",
+  "Verify or reject a convergence point based on literature and experimental evidence.",
+  {
+    forest_id: z.string(),
+    point_id: z.string(),
+    verified: z.boolean().describe("true = verified, false = rejected."),
+    evidence_ids: z.array(z.string()).optional().describe("Experiment or evidence node IDs supporting the decision."),
+  },
+  async (params) => {
+    const point = verifyConvergencePoint(
+      params.forest_id, params.point_id,
+      params.verified, params.evidence_ids ?? [],
+    );
+    if (!point) return ok({ error: "Convergence point not found." });
+    return ok({ point_id: point.id, verification_status: point.verification_status });
+  },
+);
+
+// ── research_record_contribution ──────────────────────────────────────────
+
+server.tool(
+  "research_record_contribution",
+  "Grade a contribution as primary (converged) or auxiliary (non-converged).",
+  {
+    forest_id: z.string(),
+    convergence_point_id: z.string(),
+    level: z.enum(["primary", "auxiliary"]),
+    description: z.string().describe("Human-readable description of this contribution."),
+  },
+  async (params) => {
+    const success = recordContribution(
+      params.forest_id, params.convergence_point_id,
+      params.level as ContributionLevel, params.description,
+    );
+    if (!success) return ok({ error: "Failed to record contribution." });
+    return ok({ recorded: true, level: params.level });
+  },
+);
+
+// ── research_get_forest ───────────────────────────────────────────────────
+
+server.tool(
+  "research_get_forest",
+  "Get the full derivation forest state and summary.",
+  {
+    forest_id: z.string(),
+    include_nodes: z.boolean().optional().describe("Include full node details (default true)."),
+  },
+  async (params) => {
+    const forest = getForest(params.forest_id);
+    if (!forest) return ok({ error: `Forest '${params.forest_id}' not found.` });
+    const summary = getForestSummary(params.forest_id);
+    if (params.include_nodes === false) {
+      return ok({ summary });
+    }
+    return ok({ summary, forest });
+  },
+);
+
+// ── research_iterate ──────────────────────────────────────────────────────
+
+server.tool(
+  "research_iterate",
+  "Increment the forest iteration counter. Returns whether to continue or stop.",
+  {
+    forest_id: z.string(),
+  },
+  async (params) => {
+    const count = incrementIteration(params.forest_id);
+    if (count < 0) return ok({ error: `Forest '${params.forest_id}' not found.` });
+    const forest = getForest(params.forest_id);
+    const maxIter = forest?.max_iterations ?? 20;
+    const shouldContinue = count < maxIter && forest?.status !== "done";
+    if (!shouldContinue && forest?.status !== "done") {
+      markForestDone(params.forest_id);
+    }
+    return ok({ iteration: count, max_iterations: maxIter, continue: shouldContinue, status: forest?.status });
   },
 );
 

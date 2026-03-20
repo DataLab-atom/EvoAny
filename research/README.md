@@ -10,6 +10,8 @@
 | `02_compatible_products_capabilities.md` | 兼容产品现有能力对比（QClaw、WorkBuddy、ArkClaw、ClawWork、PicoClaw 等） |
 | `03_evo_anything_analysis.md` | 本仓库分析：干什么、依赖哪些 OpenClaw 现有能力、增加了哪些新能力、当前没有什么 |
 | `04_ecosystem_capability_map.md` | **生态能力全景图**：三层基础设施（平台内置工具 / 官方 Skills 53个 + Extensions 74个 / 社区 5,366+ skills）的完整能力清单，以及 Evo-anything 当前用到了哪些、还有哪些高价值能力尚未接入 |
+| `05_a_layer_knowledge_qa.md` | **能力分层架构**：A-F 六层架构定义（知识检索 / 实验执行 / 研究验证回环 / 章节写作 / 论文组装 / 基础设施） |
+| `06_implementation_roadmap.md` | **A-F 分层架构实施路线图**：将分层架构映射到现有系统的具体实施计划，含任务明细、文件清单、验收标准 |
 
 ## 核心结论
 
