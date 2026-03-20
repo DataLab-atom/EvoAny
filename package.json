@@ -27,8 +27,6 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "vitest run",
-    "test:watch": "vitest",
     "prepublishOnly": "npm run build",
     "postinstall": "node scripts/postinstall.js"
   },
@@ -47,8 +45,6 @@
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "@vitest/coverage-v8": "^4.1.0",
-    "typescript": "^5.8.0",
-    "vitest": "^4.1.0"
+    "typescript": "^5.8.0"
   }
 }
