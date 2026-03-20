@@ -116,3 +116,47 @@ export declare function createDefaultTarget(t: {
 }): Target;
 export declare function createDefaultState(config: EvolutionConfig): EvolutionState;
 export declare const DEFAULT_PROTECTED_PATTERNS: string[];
+export interface DerivationNode {
+    id: string;
+    type: "change" | "hypothesis" | "evidence" | "question";
+    content: string;
+    parent_ids: string[];
+    child_ids: string[];
+    /** Git branches from evo_get_lineage related to this node */
+    source_branches: string[];
+    /** BibTeX keys from literature search */
+    literature_refs: string[];
+    /** B-layer experiment IDs */
+    experiment_ids: string[];
+    status: "active" | "pruned" | "converged";
+    depth: number;
+    created_at: number;
+    updated_at: number;
+}
+export interface ConvergencePoint {
+    id: string;
+    /** The deep motivation Q — emerged from branch convergence */
+    question: string;
+    contributing_node_ids: string[];
+    evidence_ids: string[];
+    verification_status: "pending" | "verified" | "rejected";
+}
+export type ContributionLevel = "primary" | "auxiliary";
+export interface Contribution {
+    convergence_point_id: string;
+    level: ContributionLevel;
+    description: string;
+    node_ids: string[];
+}
+export interface DerivationForest {
+    id: string;
+    evo_session_summary: string;
+    nodes: Record<string, DerivationNode>;
+    convergence_points: ConvergencePoint[];
+    contributions: Contribution[];
+    iteration_count: number;
+    max_iterations: number;
+    status: "exploring" | "converging" | "done";
+    created_at: number;
+    updated_at: number;
+}
