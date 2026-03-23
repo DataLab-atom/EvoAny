@@ -1,4 +1,6 @@
-
+<p align="center">
+  <img src="./images/image.png" alt="EvoClaw Logo" width="220" />
+</p>
 
 # Evo-anything Plugin — Git-Based Evolutionary Code Optimizer
 <div align="center">
