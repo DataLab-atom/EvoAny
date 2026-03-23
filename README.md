@@ -1,21 +1,21 @@
 <p align="center">
-  <img src="./images/image.png" alt="Evo-anything Logo" width="220" />
+  <img src="./images/image.png" alt="EvoClaw Logo" width="220" />
 </p>
 
-# Evo-anything Plugin — Git-Based Evolutionary Code Optimizer
+# EvoClaw Plugin — Git-Based Evolutionary Code Optimizer
 <div align="center">
 
-[![文档](https://img.shields.io/badge/文档-中文版-blue.svg)](https://github.com/DataLab-atom/Evo-anything/blob/main/README.md)
-[![document](https://img.shields.io/badge/document-English-blue.svg)](https://github.com/DataLab-atom/Evo-anything/blob/main/README_EN.md)
+[![文档](https://img.shields.io/badge/文档-中文版-blue.svg)](https://github.com/DataLab-atom/Evo-anything/blob/main/README_ZN.md)
+[![document](https://img.shields.io/badge/document-English-blue.svg)](https://github.com/DataLab-atom/Evo-anything/blob/main/README.md)
 [![License](https://img.shields.io/badge/License-Apache-blue.svg)](https://github.com/DataLab-atom/Evo-anything/blob/main/LICENSE)
 
 </div>
 
 ![Demo Framework Diagram](./images/system_overview.png)
 
-Evo-anything is the engineering implementation of **"From Understanding to Excelling: Template-Free Algorithm Design through Structural-Functional Co-Evolution"** (arXiv:2503.10721). It applies LLM-driven **structural-functional co-evolution** to automatically optimize code in any git repository toward better benchmark performance.
+EvoClaw is an automated evolutionary optimization system for any git repository with a benchmark or evaluation script. It uses an LLM-driven **structural-functional co-evolution** workflow to automatically identify optimization targets, generate code variants, execute benchmark evaluations, and continuously select and retain better-performing implementations across multiple iterations.
 
-> **Paper:** Zhe Zhao, Haibin Wen, Pengkun Wang, Ye Wei, Zaixi Zhang, Xi Lin, Fei Liu, Bo An, Hui Xiong, Yang Wang, Qingfu Zhang. *From Understanding to Excelling: Template-Free Algorithm Design through Structural-Functional Co-Evolution.* arXiv:2503.10721 [cs.SE], 2025.
+As an engineering-oriented evolution engine integrated into the OpenClaw/MCP ecosystem, EvoClaw treats git branches as candidate individuals and benchmark results as fitness. By combining multi-objective selection, policy constraints, and cross-generation memory, it enables automatic, traceable, and sustained optimization of algorithms, model training code, and other software repositories with quantitative evaluation pipelines.
 
 ## Demo Example
 <div align="center">
@@ -225,7 +225,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ### Any Other MCP-Compatible Client
 
-Evo-anything's core is a standard [MCP](https://modelcontextprotocol.io) server. Any client that supports MCP stdio transport can connect:
+EvoClaw's core is a standard [MCP](https://modelcontextprotocol.io) server. Any client that supports MCP stdio transport can connect:
 
 ```bash
 # Start the server directly (stdio mode)
@@ -283,7 +283,7 @@ You send: I want SOTA on CIFAR-100-LT
 
 ## How It Works
 
-Evo-anything implements the **U2E (Understanding to Excelling) protocol** proposed in the paper — a template-free, two-dimensional co-evolution framework. Unlike EoH and FunSearch, which rely on predefined templates and optimize only local key functions, U2E performs global joint optimization across both the **functional dimension** (algorithm logic) and the **structural dimension** (code architecture).
+EvoClaw implements the **U2E (Understanding to Excelling) protocol** proposed in the paper — a template-free, two-dimensional co-evolution framework. Unlike EoH and FunSearch, which rely on predefined templates and optimize only local key functions, U2E performs global joint optimization across both the **functional dimension** (algorithm logic) and the **structural dimension** (code architecture).
 
 Every experiment is tracked as a git branch. The evolution loop has six stages:
 
@@ -301,7 +301,7 @@ The best result of each generation is tagged (`best-gen-{N}`), and the final `be
 | Method | Template Required | Optimization Scope | Structural Evolution |
 |--------|------------------|--------------------|----------------------|
 | EoH / FunSearch | Yes (predefined) | Local functions | No |
-| **Evo-anything (U2E)** | **No** | **Global multi-target** | **Functional + Structural co-evolution** |
+| **EvoClaw (U2E)** | **No** | **Global multi-target** | **Functional + Structural co-evolution** |
 
 ## Skills
 
@@ -317,7 +317,7 @@ The best result of each generation is tagged (`best-gen-{N}`), and the final `be
 ## Repository Structure
 
 ```
-Evo-anything/
+EvoClaw/
 ├── LICENSE
 ├── README.md
 ├── README_EN.md
@@ -357,7 +357,7 @@ Evo-anything/
 
 ## Evolution Memory
 
-Evo-anything maintains structured memory in the target repository to avoid repeating failed attempts:
+EvoClaw maintains structured memory in the target repository to avoid repeating failed attempts:
 
 ```
 memory/
@@ -380,7 +380,8 @@ Tags: `seed-baseline`, `best-gen-{N}`, `best-overall`
 
 ## Acknowledgements
 
-The following is a non-exhaustive list of projects that informed our work:
+The following is a non-exhaustive list of papers and projects that informed our work:
 
+- [From Understanding to Excelling: Template-Free Algorithm Design through Structural-Functional Co-Evolution](https://arxiv.org/abs/2503.10721)
 - [Evolution of Heuristics: Towards Efficient Automatic Algorithm Design using Large Language Model](https://github.com/FeiLiu36/EoH)
 - [LLM4AD: Large Language Model for Algorithm Design](https://github.com/Optima-CityU/LLM4AD)
