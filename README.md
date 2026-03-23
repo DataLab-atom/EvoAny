@@ -11,10 +11,7 @@ Evo-anything 是基于论文 **"From Understanding to Excelling: Template-Free A
 > **论文引用：** Zhe Zhao, Haibin Wen, Pengkun Wang, Ye Wei, Zaixi Zhang, Xi Lin, Fei Liu, Bo An, Hui Xiong, Yang Wang, Qingfu Zhang. *From Understanding to Excelling: Template-Free Algorithm Design through Structural-Functional Co-Evolution.* arXiv:2503.10721 [cs.SE], 2025.
 
 ## Demo Example
-
-<p align="center">
-  <a href="https://github.com/user-attachments/assets/71891cd8-aded-4a02-ae14-6437a8b5cd2d">Demo Video</a>
-</p>
+https://github.com/user-attachments/assets/71891cd8-aded-4a02-ae14-6437a8b5cd2d
 
 ## 安装
 
