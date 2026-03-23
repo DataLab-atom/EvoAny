@@ -362,7 +362,7 @@ Tags: `seed-baseline`, `best-gen-{N}`, `best-overall`
 
 ## 致谢
 
-our work is built upon the following projects, among others:
+我们的工作参考了以下项目（仅列举部分）:
 
 - [Evolution of Heuristics: Towards Efficient Automatic Algorithm Design using Large Language Model](https://github.com/FeiLiu36/EoH)
 - [LLM4AD: Large Language Model for Algorithm Design](https://github.com/Optima-CityU/LLM4AD)
