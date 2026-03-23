@@ -1,8 +1,8 @@
-# Evo-anything Plugin — Git-Based Evolutionary Code Optimizer
-
 <p align="center">
   <img src="./images/image.png" alt="Evo-anything Logo" width="220" />
 </p>
+
+# Evo-anything Plugin — Git-Based Evolutionary Code Optimizer
 
 Evo-anything 是基于论文 **"From Understanding to Excelling: Template-Free Algorithm Design through Structural-Functional Co-Evolution"**（arXiv:2503.10721）的工程实现。它通过 LLM 驱动的**结构-功能协同演化**，在任意 git 仓库上自动演化代码，追求更优的 benchmark 表现。
 
