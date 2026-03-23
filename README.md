@@ -7,7 +7,7 @@
 
 [![文档](https://img.shields.io/badge/文档-中文版-blue.svg)](#)
 [![document](https://img.shields.io/badge/document-English-blue.svg)](#)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](#)
+[![License](https://img.shields.io/badge/License-Apache-blue.svg)](#)
 
 </div>
 
