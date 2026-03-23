@@ -11,12 +11,9 @@ Evo-anything is the engineering implementation of **"From Understanding to Excel
 > **Paper:** Zhe Zhao, Haibin Wen, Pengkun Wang, Ye Wei, Zaixi Zhang, Xi Lin, Fei Liu, Bo An, Hui Xiong, Yang Wang, Qingfu Zhang. *From Understanding to Excelling: Template-Free Algorithm Design through Structural-Functional Co-Evolution.* arXiv:2503.10721 [cs.SE], 2025.
 
 ## Demo Example
+https://github.com/user-attachments/assets/0f9720ca-a2bb-490b-8a2a-76244118157c
 
-<video src="./images/6a0e0f491d9a3575130245dddd24a2b8.mp4" controls width="900">
-  Your browser does not support the video tag.
-</video>
 
-[Demo Example](./images/6a0e0f491d9a3575130245dddd24a2b8.mp4)
 
 ## Installation
 
