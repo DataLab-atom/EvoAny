@@ -258,9 +258,9 @@ export U2E_STATE_DIR=/path/to/your/state
 
 ## 工作原理
 
-### 论文框架图（PDF）
+### 论文框架图
 
-[Demo Framework Diagram](<./images/system_overview (1).pdf>)
+[![Demo Framework Diagram](./images/system_overview.png)](<./images/system_overview%20(1).pdf>)
 
 Evo-anything 实现了论文提出的 **U2E（Understanding to Excelling）协议**——一种无模板的两维协同演化框架，区别于 EoH、FunSearch 等依赖预定义模板、仅做局部函数优化的方法，U2E 同时在**功能维**（算法逻辑）和**结构维**（代码架构）上做全局联合优化。
 

@@ -256,9 +256,9 @@ You send: I want SOTA on CIFAR-100-LT
 
 ## How It Works
 
-### Paper Framework Diagram (PDF)
+### Paper Framework Diagram
 
-[Demo Framework Diagram](<./images/system_overview (1).pdf>)
+[![Demo Framework Diagram](./images/system_overview.png)](<./images/system_overview%20(1).pdf>)
 
 Evo-anything implements the **U2E (Understanding to Excelling) protocol** proposed in the paper — a template-free, two-dimensional co-evolution framework. Unlike EoH and FunSearch, which rely on predefined templates and optimize only local key functions, U2E performs global joint optimization across both the **functional dimension** (algorithm logic) and the **structural dimension** (code architecture).
 
