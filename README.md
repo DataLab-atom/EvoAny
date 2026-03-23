@@ -20,7 +20,7 @@ Evo-anything 是基于论文 **"From Understanding to Excelling: Template-Free A
 ## Demo Example
 <div align="center">
   
-https://github.com/user-attachments/assets/71891cd8-aded-4a02-ae14-6437a8b5cd2d
+https://github.com/user-attachments/assets/ffe7deb0-ce0c-4bfb-8423-d0067c7fe356
 
 </div>
 
