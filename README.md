@@ -3,15 +3,26 @@
 </p>
 
 # Evo-anything Plugin — Git-Based Evolutionary Code Optimizer
+<div align="center">
 
-[![Demo Framework Diagram](./images/system_overview.png)](<./images/system_overview%20(1).pdf>)
+[![文档](https://img.shields.io/badge/文档-中文版-blue.svg)](#)
+[![document](https://img.shields.io/badge/document-English-blue.svg)](#)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](#)
+
+</div>
+
+![Demo Framework Diagram](./images/system_overview.png)
 
 Evo-anything 是基于论文 **"From Understanding to Excelling: Template-Free Algorithm Design through Structural-Functional Co-Evolution"**（arXiv:2503.10721）的工程实现。它通过 LLM 驱动的**结构-功能协同演化**，在任意 git 仓库上自动演化代码，追求更优的 benchmark 表现。
 
 > **论文引用：** Zhe Zhao, Haibin Wen, Pengkun Wang, Ye Wei, Zaixi Zhang, Xi Lin, Fei Liu, Bo An, Hui Xiong, Yang Wang, Qingfu Zhang. *From Understanding to Excelling: Template-Free Algorithm Design through Structural-Functional Co-Evolution.* arXiv:2503.10721 [cs.SE], 2025.
 
 ## Demo Example
+<div align="center">
+  
 https://github.com/user-attachments/assets/71891cd8-aded-4a02-ae14-6437a8b5cd2d
+
+</div>
 
 ## 安装
 
