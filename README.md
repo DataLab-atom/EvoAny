@@ -9,7 +9,6 @@
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D16-339933?logo=node.js&logoColor=white)](https://github.com/DataLab-atom/EvoClaw/blob/main/package.json)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/DataLab-atom/EvoClaw/pulls)
 [![Build Status](https://github.com/DataLab-atom/EvoClaw/actions/workflows/ci.yml/badge.svg)](https://github.com/DataLab-atom/EvoClaw/actions/workflows/ci.yml)
-[![Web](https://img.shields.io/badge/Web-GitHub-black?logo=github)](https://github.com/DataLab-atom/EvoClaw)
 
 [Installation](#installation) | [Platform Setup](#platform-setup) | [How It Works](#how-it-works) | [Skills](#skills)
 </div>
