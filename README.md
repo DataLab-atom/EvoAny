@@ -1,9 +1,8 @@
-<p align="center">
-  <img src="./images/image.png" alt="EvoClaw Logo" width="220" />
-</p>
+<div align="center">
+
+<img src="./images/image.png" alt="EvoClaw Logo" width="220" />
 
 # EvoClaw Plugin — Git-Based Evolutionary Code Optimizer
-<div align="center">
 
 [![文档](https://img.shields.io/badge/文档-中文版-blue.svg)](https://github.com/DataLab-atom/EvoClaw/blob/main/README_ZN.md)
 [![document](https://img.shields.io/badge/document-English-blue.svg)](https://github.com/DataLab-atom/EvoClaw/blob/main/README.md)
@@ -11,13 +10,17 @@
 
 </div>
 
-![Demo Framework Diagram](./images/system_overview.png)
+<div align="center">
+  <img src="./images/system_overview.png" alt="Demo Framework Diagram" />
+</div>
 
-EvoClaw represents a newer LLM-driven automation paradigm for algorithm and code optimization. Instead of limiting LLM-based design to task-specific templates, manual task adaptation, and research-oriented scaffolding, it turns the entire workflow into an engineering-oriented automated evolution system for arbitrary git repositories. Building on the direction opened by systems such as LLM4AD and AlphaEvolve, EvoClaw focuses not only on generating better candidates, but on connecting repository discovery, environment setup, benchmark integration, target identification, code generation, evaluation, selection, and result tracking into a runnable closed loop.
+> EvoClaw represents a newer LLM-driven automation paradigm for algorithm and code optimization. Instead of limiting LLM-based design to task-specific templates, manual task adaptation, and research-oriented scaffolding, it turns the entire workflow into an engineering-oriented automated evolution system for arbitrary git repositories. Building on the direction opened by systems such as LLM4AD and AlphaEvolve, EvoClaw focuses not only on generating better candidates, but on connecting repository discovery, environment setup, benchmark integration, target identification, code generation, evaluation, selection, and result tracking into a runnable closed loop.
+>
+> Compared with the previous workflow pattern where researchers often had to manually adapt code and wire up evaluation pipelines before search could even begin, EvoClaw raises the level of automation and makes interaction far more natural. Users can describe an optimization goal in natural language, and the system automatically drives the full evolution process around a benchmark or evaluation script, continuously selecting and retaining better-performing implementations over multiple iterations. For algorithm repositories, training code, and other quantitatively evaluable systems, this shift from a semi-manual research workflow to a fully automated loop is the core advantage.
+>
+> As an engineering-oriented evolution engine integrated into the OpenClaw/MCP ecosystem, EvoClaw treats git branches as candidate individuals and benchmark results as fitness. By combining multi-objective selection, policy constraints, and cross-generation memory, it enables automatic, traceable, and sustained optimization of any repository with a benchmark or evaluation script.
 
-Compared with the previous workflow pattern where researchers often had to manually adapt code and wire up evaluation pipelines before search could even begin, EvoClaw raises the level of automation and makes interaction far more natural. Users can describe an optimization goal in natural language, and the system automatically drives the full evolution process around a benchmark or evaluation script, continuously selecting and retaining better-performing implementations over multiple iterations. For algorithm repositories, training code, and other quantitatively evaluable systems, this shift from a semi-manual research workflow to a fully automated loop is the core advantage.
-
-As an engineering-oriented evolution engine integrated into the OpenClaw/MCP ecosystem, EvoClaw treats git branches as candidate individuals and benchmark results as fitness. By combining multi-objective selection, policy constraints, and cross-generation memory, it enables automatic, traceable, and sustained optimization of any repository with a benchmark or evaluation script.
+---
 
 ## Why EvoClaw
 
@@ -28,12 +31,16 @@ As an engineering-oriented evolution engine integrated into the OpenClaw/MCP eco
 | Automation scope | Often covers search or local optimization only | Covers repository discovery, environment setup, target identification, code generation, evaluation, selection, and tracking |
 | Applicability | More tied to predefined tasks, templates, or research examples | Works for arbitrary git repositories with quantitative evaluation |
 
+---
+
 ## Demo Example
 <div align="center">
 
 https://github.com/user-attachments/assets/94b63348-de0d-4602-a2ce-3e73740656e2
 
 </div>
+
+---
 
 ## Quick Start
 
@@ -247,6 +254,8 @@ Or configure via `openclaw.json`:
 }
 ```
 
+---
+
 ## Quick Start
 
 ```
@@ -266,6 +275,8 @@ You send: I want SOTA on CIFAR-100-LT
          ↓
   Pushes best branch + sends final report when done
 ```
+
+---
 
 ## How It Works
 
@@ -289,6 +300,8 @@ The best result of each generation is tagged (`best-gen-{N}`), and the final `be
 | EoH / FunSearch | Yes (predefined) | Local functions | No |
 | **EvoClaw (U2E)** | **No** | **Global multi-target** | **Functional + Structural co-evolution** |
 
+---
+
 ## Skills
 
 | Command | Description |
@@ -299,6 +312,8 @@ The best result of each generation is tagged (`best-gen-{N}`), and the final `be
 | `/report` | Generate a full evolution report |
 | `/boost <target_id>` | Increase the priority of an optimization target |
 | `/freeze <target_id>` | Freeze a target, stopping evolution on it |
+
+---
 
 ## Repository Structure
 
@@ -341,6 +356,8 @@ EvoClaw/
         └── evo-finish.lobster # finish flow (tag→push→approval gate→PR)
 ```
 
+---
+
 ## Evolution Memory
 
 EvoClaw maintains structured memory in the target repository to avoid repeating failed attempts:
@@ -363,6 +380,8 @@ gen-{N}/synergy/{targetA}+{targetB}-{V}  # cross-target combination
 ```
 
 Tags: `seed-baseline`, `best-gen-{N}`, `best-overall`
+
+---
 
 ## Acknowledgements
 
