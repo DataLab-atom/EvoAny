@@ -283,21 +283,22 @@ export U2E_STATE_DIR=/path/to/your/state
 ## Quick Start
 
 ```
-你在 Telegram 发：我要 CIFAR-100-LT 上 SOTA
+你说：优化这个仓库 https://github.com/example/long-tail-repo
+      benchmark 命令是 python benchmark.py --dataset cifar100_lt
+      优化目标是 top1=max, latency=min
+      预算设为 120 次评估
          ↓
-  /hunt 自动触发
+  调用 /evolve，初始化 repo_path、benchmark_cmd、objectives、max_fe
          ↓
-  搜 GitHub → 找到 3 个候选 → 问你选哪个
+  注册优化目标 → 生成首批 mutate / crossover / structural 候选
          ↓
-  你说：用第 1 个
+  Worker 并行改代码 → policy check → worktree 中跑 benchmark
          ↓
-  clone → 安装依赖 → 下载数据 → 跑基线确认能跑
+  回报 fitness → 更新局部 / 全局 Pareto front
          ↓
-  自动调用 /evolve → 进化循环
+  进入下一代，直到 120 次评估预算用完
          ↓
-  每代给你发进度
-         ↓
-  结束后推最优分支 + 发报告
+  输出最优分支、Pareto 结果和完整演化报告
 ```
 
 ## 工作原理

@@ -283,21 +283,22 @@ Or configure via `openclaw.json`:
 ## Quick Start
 
 ```
-You send: I want SOTA on CIFAR-100-LT
+You say: optimize this repo https://github.com/example/long-tail-repo
+      benchmark command is python benchmark.py --dataset cifar100_lt
+      objectives are top1=max, latency=min
+      budget is 120 evaluations
          ↓
-  /hunt triggers automatically
+  Call /evolve with repo_path, benchmark_cmd, objectives, and max_fe
          ↓
-  Searches GitHub → finds 3 candidates → asks which one
+  Register optimization targets → generate the first mutate / crossover / structural batch
          ↓
-  You say: use #1
+  Workers edit code in parallel → policy check → benchmark in isolated worktrees
          ↓
-  clone → install deps → download data → run baseline to confirm it works
+  Report fitness → update target-local and global Pareto fronts
          ↓
-  Automatically calls /evolve → evolution loop begins
+  Continue generation by generation until the 120-evaluation budget is exhausted
          ↓
-  Progress report after each generation
-         ↓
-   Pushes best branch + sends final report when done
+  Output the best branch, Pareto results, and the final evolution report
 ```
 
 ---
