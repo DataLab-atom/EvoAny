@@ -7,7 +7,7 @@
 [![document](https://img.shields.io/badge/document-English-blue.svg)](https://github.com/DataLab-atom/EvoClaw/blob/main/README.md)
 [![License](https://img.shields.io/badge/License-Apache-blue.svg)](https://github.com/DataLab-atom/EvoClaw/blob/main/LICENSE)
 
-[快速开始](#快速开始) | [平台接入](#平台接入) | [工作原理](#工作原理) | [Skills](#skills)
+[安装](#安装) | [平台接入](#平台接入) | [工作原理](#工作原理) | [Skills](#skills)
 </div>
 
 ![Demo Framework Diagram](./images/system_overview.png)
@@ -40,16 +40,16 @@ https://github.com/user-attachments/assets/ffe7deb0-ce0c-4bfb-8423-d0067c7fe356
 
 ---
 
-## 快速开始
+## 安装
 
-### 1）安装前置依赖
+### 前置依赖
 
 **必需：**
 - Node.js >= 16
 - Git
 - GitHub CLI (`gh`) — 用于 `/hunt` 搜索仓库和自动开 PR
 
-**可选：**
+**可选（安装后会自动启用）：**
 - `oracle` CLI — MapAgent 整仓库上下文分析（`npm install -g oracle`）
 - `claude` CLI — WorkerAgent 复杂变体生成，用 Claude Code 代替直接 edit
 - `codex` CLI — WorkerAgent 复杂变体生成的备选
@@ -58,56 +58,72 @@ https://github.com/user-attachments/assets/ffe7deb0-ce0c-4bfb-8423-d0067c7fe356
 - `pyflakes` — 变体提交前 import/name 静态检查（`npm install -g pyflakes` 或 `pipx install pyflakes`）
 - OpenClaw skills: `oracle`、`arxiv-watcher`、`summarize`、`session-logs`（通过 `clawhub install <slug>` 安装）
 
-### 2）安装 EvoClaw
-
-如果你只是想直接使用 EvoClaw：
+### 方式 1：npm（推荐）
 
 ```bash
 npm install -g evo-anything
 ```
 
-如果你在本地开发插件：
+这会在 npm postinstall 阶段自动验证依赖并配置 MCP server。
+
+安装完成后，配置你的 AI IDE：
+
+```bash
+# 一次性配置所有支持的平台（Claude Code、Cursor、Windsurf、OpenClaw）
+npx evo-anything setup
+
+# 或只配置某一个平台
+npx evo-anything setup --platform claude
+npx evo-anything setup --platform cursor
+npx evo-anything setup --platform windsurf
+npx evo-anything setup --platform openclaw
+```
+
+---
+
+### 方式 2：手动安装
+
+#### 第 1 步：安装 evo-engine（所有平台都需要）
 
 ```bash
 git clone https://github.com/DataLab-atom/EvoClaw.git
 cd EvoClaw
-npm install
-npm run build
+npm install && npm run build
 ```
 
-### 3）把 EvoClaw 接到你的平台上
+---
 
-#### OpenClaw
-
-推荐方式：
-
-```bash
-npx evo-anything setup --platform openclaw
-openclaw gateway restart
-```
-
-这是 OpenClaw 用户的推荐路径。`setup` 会自动把插件复制到 `~/.openclaw/extensions/evo-anything`，在 `plugins.allow` 和 `plugins.entries` 中启用插件，注册自带 skills，并把 `"evo-anything"` 写入 `tools.alsoAllow`，让 `evo_init` 这类原生工具真正进入 coding-profile agent 的工具表。
-
-验证：
-
-```bash
-openclaw plugins info evo-anything
-```
-
-然后新开一个 agent 会话，确认 `evo_init`、`evo_get_status` 之类的工具已经可用。
-
-如果你修改了会影响 `dist/` 的代码，请这样重装：
-
-```bash
-npm run build
-npx evo-anything setup --platform openclaw
-openclaw gateway restart
-```
+### OpenClaw
 
 <details>
-<summary>手动安装（仅在 <code>setup</code> 无法修改 OpenClaw 配置时使用）</summary>
+<summary>推荐安装</summary>
 
-只有在 `setup` 无法修改 OpenClaw 配置时，才建议手动安装：
+```bash
+npx evo-anything setup
+openclaw gateway restart
+```
+
+`setup` 会把插件安装到 `~/.openclaw/extensions/evo-anything`，在 `plugins.allow` 和 `plugins.entries` 中启用插件，注册内置 skills，并把 `"evo-anything"` 写入 `tools.alsoAllow`，让 `evo_*` 工具出现在 agent 的工具表中。
+
+</details>
+
+<details>
+<summary>本地开发模式</summary>
+
+```bash
+npm run build
+npx evo-anything setup
+openclaw gateway restart
+```
+
+当你修改了 `plugin/index.ts`、`plugin/server.ts` 或其他会影响 `dist/` 的代码后，使用这个流程重新安装。
+
+</details>
+
+<details>
+<summary>手动安装</summary>
+
+把构建好的插件复制到 extensions 目录，并在 `~/.openclaw/openclaw.json` 中完成注册：
 
 ```bash
 mkdir -p ~/.openclaw/extensions/evo-anything
@@ -144,13 +160,17 @@ cp openclaw.plugin.json package.json ~/.openclaw/extensions/evo-anything/
 openclaw gateway restart
 ```
 
-`plugins.allow` 决定 OpenClaw 是否加载这个插件；`tools.alsoAllow` 决定插件注册的原生工具是否会暴露给 coding-profile agent。
-
 </details>
 
-#### 其他 IDE
+`plugins.allow` 控制 OpenClaw 是否加载这个插件；`tools.alsoAllow` 控制插件注册的原生工具是否会暴露给 coding-profile agent。
 
-如果 `setup --platform <name>` 支持你的平台，优先使用；否则按下方 Claude Code、Cursor、Windsurf 的 MCP 配置示例接入。
+验证：
+
+```bash
+openclaw plugins info evo-anything
+```
+
+然后新开一个 agent 会话，确认 `evo_init`、`evo_get_status` 等工具已经可用。
 
 ---
 
