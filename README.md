@@ -10,7 +10,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/DataLab-atom/EvoClaw/pulls)
 [![Build Status](https://github.com/DataLab-atom/EvoClaw/actions/workflows/ci.yml/badge.svg)](https://github.com/DataLab-atom/EvoClaw/actions/workflows/ci.yml)
 
-[Installation](#installation) | [Manual Setup](#option-2-build-from-source-and-connect-manually) | [How It Works](#how-it-works) | [Skills](#skills)
+[Installation](#installation) | [Manual Setup](#option-2-build-from-source-and-connect-manually) | [Community](#community) | [How It Works](#how-it-works) | [Skills](#skills)
 </div>
 
 ![Demo Framework Diagram](./images/system_overview.png)
@@ -300,6 +300,20 @@ You say: optimize this repo https://github.com/example/long-tail-repo
          ↓
   Output the best branch, Pareto results, and the final evolution report
 ```
+
+---
+
+## Community
+
+Join the EvoClaw community to share usage experience, evolution case studies, and future collaboration ideas.
+
+The WeChat group QR code can be added later under `images/`. A good default path is `images/wechat_qr.png`; once uploaded, uncomment the block below:
+
+<!--
+<div align="center">
+  <img src="./images/wechat_qr.png" alt="EvoClaw WeChat Group QR" width="260" />
+</div>
+-->
 
 ---
 
