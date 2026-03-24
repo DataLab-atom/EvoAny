@@ -10,7 +10,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/DataLab-atom/EvoClaw/pulls)
 [![Build Status](https://github.com/DataLab-atom/EvoClaw/actions/workflows/ci.yml/badge.svg)](https://github.com/DataLab-atom/EvoClaw/actions/workflows/ci.yml)
 
-[Installation](#installation) | [Manual Setup](#option-2-build-from-source-and-connect-manually) | [Community](#community) | [How It Works](#how-it-works) | [Skills](#skills)
+[Community](#community) | [Why EvoClaw](#why-evoclaw) | [Installation](#installation) | [Quick Start](#quick-start) | [How It Works](#how-it-works) | [Skills](#skills) | [Repository Structure](#repository-structure) | [Acknowledgements](#acknowledgements)
 </div>
 
 ![Demo Framework Diagram](./images/system_overview.png)
