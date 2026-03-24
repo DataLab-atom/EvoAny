@@ -20,8 +20,7 @@
 > **Compared with the previous workflow pattern where researchers often had to manually adapt code and wire up evaluation pipelines before search could even begin, EvoClaw raises the level of automation and makes interaction far more natural.** Users can describe an optimization goal in natural language, and the system automatically drives the full evolution process around a benchmark or evaluation script, continuously selecting and retaining better-performing implementations over multiple iterations. For algorithm repositories, training code, and other quantitatively evaluable systems, this shift from a semi-manual research workflow to a fully automated loop is the core advantage.
 >
 > **As an engineering-oriented evolution engine integrated into the OpenClaw/MCP ecosystem,** EvoClaw treats git branches as candidate individuals and benchmark results as fitness. By combining multi-objective selection, policy constraints, and cross-generation memory, it enables automatic, traceable, and sustained optimization of any repository with a benchmark or evaluation script.
-
----
+> 
 
 ## Why EvoClaw
 
