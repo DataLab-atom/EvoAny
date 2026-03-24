@@ -328,13 +328,6 @@ Beyond the core optimizer, the MCP server also exposes three higher-level capabi
 
 All evolution state is persisted under `~/.openclaw/u2e-state/` by default, while run-specific memory is written back into the target repository under `memory/`. The main status view reports generation, evaluation budget, per-target stagnation and temperature, local/global Pareto fronts, and improvement versus the seed baseline.
 
-### Comparison with Prior Work
-
-| Method | Template Required | Optimization Scope | Structural Evolution |
-|--------|------------------|--------------------|----------------------|
-| EoH / FunSearch | Yes (predefined) | Local functions | No |
-| **EvoClaw** | **No** | **Global multi-target + Pareto search + research tooling** | **Functional + Structural co-evolution** |
-
 ---
 
 ## Skills
