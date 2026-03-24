@@ -104,7 +104,7 @@ npm install && npm run build
 
 #### Step 2: Connect your platform
 
-The platforms below all connect to the same `evo-engine` MCP server; the only difference is where each client expects its MCP configuration and how it imports skills.
+Access as a plugin in OpenClaw, while all other platforms connect to the same `evo-engine` MCP server, with the only differences being their respective configuration file locations and skill integration methods.
 
 ##### OpenClaw
 
