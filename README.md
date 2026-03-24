@@ -20,8 +20,7 @@
 > **Compared with the previous workflow pattern where researchers often had to manually adapt code and wire up evaluation pipelines before search could even begin, EvoClaw raises the level of automation and makes interaction far more natural.** Users can describe an optimization goal in natural language, and the system automatically drives the full evolution process around a benchmark or evaluation script, continuously selecting and retaining better-performing implementations over multiple iterations. For algorithm repositories, training code, and other quantitatively evaluable systems, this shift from a semi-manual research workflow to a fully automated loop is the core advantage.
 >
 > **As an engineering-oriented evolution engine integrated into the OpenClaw/MCP ecosystem,** EvoClaw treats git branches as candidate individuals and benchmark results as fitness. By combining multi-objective selection, policy constraints, and cross-generation memory, it enables automatic, traceable, and sustained optimization of any repository with a benchmark or evaluation script.
-
----
+> 
 
 ## Why EvoClaw
 
@@ -341,13 +340,6 @@ Beyond the core optimizer, the MCP server also exposes three higher-level capabi
 - **Research layer** — a derivation-forest workflow (`research_*` tools) that tracks hypotheses, evidence, convergence points, and contribution grading so evolution results can be turned into paper-level research narratives.
 
 All evolution state is persisted under `~/.openclaw/u2e-state/` by default, while run-specific memory is written back into the target repository under `memory/`. The main status view reports generation, evaluation budget, per-target stagnation and temperature, local/global Pareto fronts, and improvement versus the seed baseline.
-
-### Comparison with Prior Work
-
-| Method | Template Required | Optimization Scope | Structural Evolution |
-|--------|------------------|--------------------|----------------------|
-| EoH / FunSearch | Yes (predefined) | Local functions | No |
-| **EvoClaw** | **No** | **Global multi-target + Pareto search + research tooling** | **Functional + Structural co-evolution** |
 
 ---
 
