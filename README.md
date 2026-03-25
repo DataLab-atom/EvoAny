@@ -1,44 +1,44 @@
 <div align="center">
-  <img src="./images/image.png" alt="EvoClaw Logo" width="220" />
+  <img src="./images/image.png" alt="EvoAny Logo" width="220" />
 
-# EvoClaw Plugin — Git-Based Evolutionary Code Optimizer
+# EvoAny Plugin — Git-Based Evolutionary Code Optimizer
 
-[![文档](https://img.shields.io/badge/文档-中文版-blue.svg)](https://github.com/DataLab-atom/EvoClaw/blob/main/README_ZN.md)
-[![document](https://img.shields.io/badge/document-English-blue.svg)](https://github.com/DataLab-atom/EvoClaw/blob/main/README.md)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/DataLab-atom/EvoClaw/blob/main/LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D16-339933?logo=node.js&logoColor=white)](https://github.com/DataLab-atom/EvoClaw/blob/main/package.json)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/DataLab-atom/EvoClaw/pulls)
-[![Build Status](https://github.com/DataLab-atom/EvoClaw/actions/workflows/ci.yml/badge.svg)](https://github.com/DataLab-atom/EvoClaw/actions/workflows/ci.yml)
+[![文档](https://img.shields.io/badge/文档-中文版-blue.svg)](https://github.com/DataLab-atom/EvoAny/blob/main/README_ZN.md)
+[![document](https://img.shields.io/badge/document-English-blue.svg)](https://github.com/DataLab-atom/EvoAny/blob/main/README.md)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/DataLab-atom/EvoAny/blob/main/LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D16-339933?logo=node.js&logoColor=white)](https://github.com/DataLab-atom/EvoAny/blob/main/package.json)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/DataLab-atom/EvoAny/pulls)
+[![Build Status](https://github.com/DataLab-atom/EvoAny/actions/workflows/ci.yml/badge.svg)](https://github.com/DataLab-atom/EvoAny/actions/workflows/ci.yml)
 
-[Community](#community) | [Why EvoClaw](#why-evoclaw) | [Installation](#installation) | [Quick Start](#quick-start) | [How It Works](#how-it-works) | [Skills](#skills) | [Repository Structure](#repository-structure) | [Acknowledgements](#acknowledgements)
+[Community](#community) | [Why EvoAny](#why-evoany) | [Installation](#installation) | [Quick Start](#quick-start) | [How It Works](#how-it-works) | [Skills](#skills) | [Repository Structure](#repository-structure) | [Acknowledgements](#acknowledgements)
 </div>
 
 ![Demo Framework Diagram](./images/system_overview.png)
 
-> **EvoClaw represents a newer LLM-driven automation paradigm for algorithm and code optimization.** Instead of limiting LLM-based design to task-specific templates, manual task adaptation, and research-oriented scaffolding, it turns the entire workflow into an engineering-oriented automated evolution system for arbitrary git repositories. Building on the direction opened by systems such as LLM4AD and AlphaEvolve, EvoClaw focuses not only on generating better candidates, but on connecting repository discovery, environment setup, benchmark integration, target identification, code generation, evaluation, selection, and result tracking into a runnable closed loop.
+> **EvoAny represents a newer LLM-driven automation paradigm for algorithm and code optimization.** Instead of limiting LLM-based design to task-specific templates, manual task adaptation, and research-oriented scaffolding, it turns the entire workflow into an engineering-oriented automated evolution system for arbitrary git repositories. Building on the direction opened by systems such as LLM4AD and AlphaEvolve, EvoAny focuses not only on generating better candidates, but on connecting repository discovery, environment setup, benchmark integration, target identification, code generation, evaluation, selection, and result tracking into a runnable closed loop.
 >
-> **Compared with the previous workflow pattern where researchers often had to manually adapt code and wire up evaluation pipelines before search could even begin, EvoClaw raises the level of automation and makes interaction far more natural.** Users can describe an optimization goal in natural language, and the system automatically drives the full evolution process around a benchmark or evaluation script, continuously selecting and retaining better-performing implementations over multiple iterations. For algorithm repositories, training code, and other quantitatively evaluable systems, this shift from a semi-manual research workflow to a fully automated loop is the core advantage.
+> **Compared with the previous workflow pattern where researchers often had to manually adapt code and wire up evaluation pipelines before search could even begin, EvoAny raises the level of automation and makes interaction far more natural.** Users can describe an optimization goal in natural language, and the system automatically drives the full evolution process around a benchmark or evaluation script, continuously selecting and retaining better-performing implementations over multiple iterations. For algorithm repositories, training code, and other quantitatively evaluable systems, this shift from a semi-manual research workflow to a fully automated loop is the core advantage.
 >
-> **As an engineering-oriented evolution engine integrated into the OpenClaw/MCP ecosystem,** EvoClaw treats git branches as candidate individuals and benchmark results as fitness. By combining multi-objective selection, policy constraints, and cross-generation memory, it enables automatic, traceable, and sustained optimization of any repository with a benchmark or evaluation script.
+> **As an engineering-oriented evolution engine integrated into the OpenClaw/MCP ecosystem,** EvoAny treats git branches as candidate individuals and benchmark results as fitness. By combining multi-objective selection, policy constraints, and cross-generation memory, it enables automatic, traceable, and sustained optimization of any repository with a benchmark or evaluation script.
 > 
 
 ---
 
 ## Community
 
-Join the EvoClaw community to share usage experience, evolution case studies, and future collaboration ideas.
+Join the EvoAny community to share usage experience, evolution case studies, and future collaboration ideas.
 
 <!--
 <div align="center">
-  <img src="./images/wechat_qr.png" alt="EvoClaw WeChat Group QR" width="260" />
+  <img src="./images/wechat_qr.png" alt="EvoAny WeChat Group QR" width="260" />
 </div>
 -->
 
 ---
 
-## Why EvoClaw
+## Why EvoAny
 
-| Key Question | Traditional LLM4AD / AlphaEvolve-style workflow | EvoClaw |
+| Key Question | Traditional LLM4AD / AlphaEvolve-style workflow | EvoAny |
 |-------------|--------------------------------------------------|---------|
 | Task onboarding | Often requires manual task-code adaptation, interface wiring, and evaluation hookup | Directly targets git repositories and auto-connects through benchmark/eval entry points |
 | Interaction model | Usually research-platform driven or script-orchestrated | Natural-language driven, with search, setup, evolution, and reporting connected end to end |
@@ -101,7 +101,7 @@ npx evo-anything setup --platform openclaw
 
 Use this path when:
 
-- you want to develop or debug EvoClaw locally
+- you want to develop or debug EvoAny locally
 - `npx evo-anything setup` cannot update your platform configuration directly
 - you want full manual control over plugin installation and MCP wiring
 
@@ -110,8 +110,8 @@ This path has two parts: build `evo-engine` first, then connect it to your platf
 #### Step 1: Build evo-engine from source (required for all platforms)
 
 ```bash
-git clone https://github.com/DataLab-atom/EvoClaw.git
-cd EvoClaw
+git clone https://github.com/DataLab-atom/EvoAny.git
+cd EvoAny
 npm install && npm run build
 ```
 
@@ -259,7 +259,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ##### Any Other MCP-Compatible Client
 
-EvoClaw's core is a standard [MCP](https://modelcontextprotocol.io) server. Any client that supports MCP stdio transport can connect:
+EvoAny's core is a standard [MCP](https://modelcontextprotocol.io) server. Any client that supports MCP stdio transport can connect:
 
 ```bash
 # Start the server directly (stdio mode)
@@ -316,7 +316,7 @@ You say: optimize this repo https://github.com/example/long-tail-repo
 
 ## How It Works
 
-EvoClaw runs a **multi-agent evolutionary loop on top of an MCP server**, with persistent state, target-level search control, Pareto selection, and an optional research-analysis layer. The core execution model is not just "generate code and benchmark it"; it is a coordinated loop where different agents and tools handle planning, code generation, policy review, benchmarking, survivor selection, memory updates, and downstream research synthesis.
+EvoAny runs a **multi-agent evolutionary loop on top of an MCP server**, with persistent state, target-level search control, Pareto selection, and an optional research-analysis layer. The core execution model is not just "generate code and benchmark it"; it is a coordinated loop where different agents and tools handle planning, code generation, policy review, benchmarking, survivor selection, memory updates, and downstream research synthesis.
 
 At the evolution layer, the flow is:
 
@@ -326,7 +326,7 @@ At the evolution layer, the flow is:
 4. **Dispatch workers** — each batch item becomes a git branch like `gen-{N}/{target}/{op}-{k}`; parent branches are chosen from the target Pareto set, current best branch, or the seed baseline.
 5. **Generate and review code** — WorkerAgent creates a variant, checks the evaluation cache via `evo_check_cache`, then submits the diff for an explicit policy gate before benchmarking.
 6. **Benchmark in isolation** — approved candidates are evaluated in isolated git worktrees; results are reported back with `evo_report_fitness` or `evo_step("fitness_ready")`.
-7. **Run multi-objective selection** — EvoClaw uses NSGA-II style non-dominated sorting and crowding distance to keep survivors, update target-local Pareto fronts, and maintain a global Pareto front.
+7. **Run multi-objective selection** — EvoAny uses NSGA-II style non-dominated sorting and crowding distance to keep survivors, update target-local Pareto fronts, and maintain a global Pareto front.
 8. **Adapt search pressure** — target temperature increases when a target is improving and decreases after stagnation; stagnant targets get a higher structural-op rate, and targets can also be frozen or boosted manually.
 9. **Revalidate after structural edits** — if a structural operation invalidates a target, `evo_revalidate_targets` detects it, the old target can be frozen, and replacement targets can be registered with lineage preserved.
 10. **Write memory and continue** — each generation updates `memory/`, records failures and synergy results, tags the best generation branch, and advances until the evaluation budget is exhausted.
@@ -355,10 +355,10 @@ All evolution state is persisted under `~/.openclaw/u2e-state/` by default, whil
 ## Repository Structure
 
 ```
-EvoClaw/
+EvoAny/
 ├── LICENSE
 ├── README.md
-├── README_EN.md
+├── README.md
 ├── research/                  # ecosystem research docs
 │   ├── 01_openclaw_existing_capabilities.md
 │   ├── 02_compatible_products_capabilities.md
@@ -395,7 +395,7 @@ EvoClaw/
 
 ## Evolution Memory
 
-EvoClaw maintains structured memory in the target repository to avoid repeating failed attempts:
+EvoAny maintains structured memory in the target repository to avoid repeating failed attempts:
 
 ```
 memory/
