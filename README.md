@@ -339,6 +339,20 @@ Beyond the core optimizer, the MCP server also exposes three higher-level capabi
 
 All evolution state is persisted under `~/.openclaw/u2e-state/` by default, while run-specific memory is written back into the target repository under `memory/`. The main status view reports generation, evaluation budget, per-target stagnation and temperature, local/global Pareto fronts, and improvement versus the seed baseline.
 
+Run-specific memory is written back into the target repository in a structured layout so later generations can reuse prior lessons instead of retrying known-bad directions:
+
+```text
+memory/
+├── global/long_term.md           — cross-target lessons
+├── targets/{id}/
+│   ├── short_term/gen_{N}.md     — per-generation reflection
+│   ├── long_term.md              — accumulated wisdom for this target
+│   └── failures.md               — what NOT to try again
+└── synergy/records.md            — cross-function combination results
+```
+
+Generated variants are tracked as ordinary git branches so the search stays inspectable and reproducible. Single-target branches use `gen-{N}/{target_id}/{op}-{V}`, cross-target combinations use `gen-{N}/synergy/{targetA}+{targetB}-{V}`, and important checkpoints are tagged as `seed-baseline`, `best-gen-{N}`, and `best-overall`.
+
 ---
 
 ## Skills
@@ -358,7 +372,7 @@ All evolution state is persisted under `~/.openclaw/u2e-state/` by default, whil
 EvoAny/
 ├── LICENSE
 ├── README.md
-├── README.md
+├── README_CN.md
 ├── research/                  # ecosystem research docs
 │   ├── 01_openclaw_existing_capabilities.md
 │   ├── 02_compatible_products_capabilities.md
@@ -392,29 +406,6 @@ EvoAny/
         ├── evo-setup.lobster  # atomic setup (validate→baseline→tag→mkdir)
         └── evo-finish.lobster # finish flow (tag→push→approval gate→PR)
 ```
-
-## Evolution Memory
-
-EvoAny maintains structured memory in the target repository to avoid repeating failed attempts:
-
-```
-memory/
-├── global/long_term.md           — cross-target lessons
-├── targets/{id}/
-│   ├── short_term/gen_{N}.md     — per-generation reflection
-│   ├── long_term.md              — accumulated wisdom for this target
-│   └── failures.md               — what NOT to try again
-└── synergy/records.md            — cross-function combination results
-```
-
-## Branch Naming
-
-```
-gen-{N}/{target_id}/{op}-{V}             # single-target variant
-gen-{N}/synergy/{targetA}+{targetB}-{V}  # cross-target combination
-```
-
-Tags: `seed-baseline`, `best-gen-{N}`, `best-overall`
 
 ---
 
