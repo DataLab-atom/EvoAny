@@ -358,7 +358,7 @@ All evolution state is persisted under `~/.openclaw/u2e-state/` by default, whil
 EvoAny/
 ├── LICENSE
 ├── README.md
-├── README.md
+├── README_CN.md
 ├── research/                  # ecosystem research docs
 │   ├── 01_openclaw_existing_capabilities.md
 │   ├── 02_compatible_products_capabilities.md
